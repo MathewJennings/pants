@@ -51,16 +51,16 @@ function pkg_spindle_install_test() {
     --explain gen | grep "spindle" &> /dev/null
 }
 
-PKG_VEX=(
-  "pantsbuild.pants.contrib.vex"
-  "//contrib/vex/src/python/pants/contrib/vex:plugin"
-  "pkg_vex_install_test"
+PKG_VEND=(
+  "pantsbuild.pants.contrib.vend"
+  "//contrib/vend/src/python/pants/contrib/vend:plugin"
+  "pkg_vend_install_test"
 )
-function pkg_vex_install_test() {
+function pkg_vend_install_test() {
   PIP_ARGS="$@"
-  pip install ${PIP_ARGS} pantsbuild.pants.contrib.vex==$(local_version) && \
-  execute_packaged_pants_with_internal_backends "extra_backend_packages='pants.contrib.vex'" \
-    --explain gen | grep "vex" &> /dev/null
+  pip install ${PIP_ARGS} pantsbuild.pants.contrib.vend==$(local_version) && \
+  execute_packaged_pants_with_internal_backends "extra_backend_packages='pants.contrib.vend'" \
+    --explain gen | grep "vend" &> /dev/null
 }
 
 # Once individual (new) package is declared above, insert it into the array below)
@@ -68,5 +68,5 @@ CONTRIB_PACKAGES=(
   PKG_SCROOGE
   PKG_BUILDGEN
   PKG_SPINDLE
-  PKG_VEX
+  PKG_VEND
 )

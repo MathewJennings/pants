@@ -53,10 +53,10 @@ def search_for_valid_interp(interpreter_candidates):
   return None
 
 
-vex_dir = os.path.dirname(__file__)
+vend_dir = os.path.dirname(__file__)
 
 # Retrieve bootstrap data from the JSON file
-with open(os.path.join(vex_dir, 'bootstrap_data.json'), 'r') as f:
+with open(os.path.join(vend_dir, 'bootstrap_data.json'), 'r') as f:
   bootstrap_data = json.load(f)
 
 # Find a valid interpreter
@@ -64,14 +64,14 @@ if not bootstrap_data['use_this_interpreter_option'] is None:
   try:
     interpreter = PythonInterpreter.find([bootstrap_data['use_this_interpreter_option']])[0]
   except IndexError:
-    raise Exception('The desired interpreter passed in to the ./pants vex command '
+    raise Exception('The desired interpreter passed in to the ./pants vend command '
                     'via the option --use-this-interpreter does not exist on this '
                     'target computer. Searched for an interpreter in {}'.format(
                       bootstrap_data['use_this_interpreter_option']
                     )
     )
   if not interp_satisfies_reqs(interpreter, bootstrap_data):
-    raise Exception('The desired interpreter passed in to the ./pants vex command '
+    raise Exception('The desired interpreter passed in to the ./pants vend command '
                     'via the option --use-this-interpreter does not satisfy python '
                     'version/implementation requirements imposed by this library of '
                     'code.')
@@ -95,8 +95,8 @@ else:
     )
 
 # Create a virtual environment, and install all requirements into it
-os.system('{0} {1}/virtualenv_source/virtualenv.py --extra-search-dir={1}/bootstrap_wheels/ {1}/venv'.format(chosen_interpreter.binary, vex_dir))
-os.system('{0}/venv/bin/pip install -r {0}/requirements.txt --no-index --find-links={0}/dep_wheels/ --find-links={0}/bootstrap_wheels'.format(vex_dir))
+os.system('{0} {1}/virtualenv_source/virtualenv.py --extra-search-dir={1}/bootstrap_wheels/ {1}/venv'.format(chosen_interpreter.binary, vend_dir))
+os.system('{0}/venv/bin/pip install -r {0}/requirements.txt --no-index --find-links={0}/dep_wheels/ --find-links={0}/bootstrap_wheels'.format(vend_dir))
 
 # Copy all source code into the virtual environment's site-packages
-os.system('cp -R {0}/sources/* {0}/venv/lib/{1}/site-packages/'.format(vex_dir, chosen_interpreter.binary.split('/')[-1]))
+os.system('cp -R {0}/sources/* {0}/venv/lib/{1}/site-packages/'.format(vend_dir, chosen_interpreter.binary.split('/')[-1]))

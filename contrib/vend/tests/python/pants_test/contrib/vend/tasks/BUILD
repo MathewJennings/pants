@@ -4,16 +4,16 @@
 target(
   name = 'tasks',
   dependencies = [
-    ':vex',
+    ':vend',
     ':integration'
   ],
 )
 
 python_tests(
-  name = 'vex',
-  sources = ['test_vex.py'],
+  name = 'vend',
+  sources = ['test_vend.py'],
   dependencies = [
-    'contrib/vex/src/python/pants/contrib/vex/tasks:vex',
+    'contrib/vend/src/python/pants/contrib/vend/tasks:vend',
     'tests/python/pants_test/backend/python/tasks:python_task_test',
     'src/python/pants/backend/python/targets:python',
     'src/python/pants/base:source_root',
@@ -22,9 +22,9 @@ python_tests(
 
 python_tests(
   name = 'integration',
-  sources = ['vex_integration_test.py'],
+  sources = ['vend_integration_test.py'],
   dependencies = [
-    'contrib/vex/src/python/pants/contrib/vex/tasks:vex',
+    'contrib/vend/src/python/pants/contrib/vend/tasks:vend',
     'tests/python/pants_test:int-test',
   ],
 )

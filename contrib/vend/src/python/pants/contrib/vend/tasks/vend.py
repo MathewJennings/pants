@@ -28,22 +28,22 @@ from pip.status_codes import SUCCESS
 from pip.wheel import Wheel
 
 
-class Vex(PythonTask):
+class Vend(PythonTask):
   def __init__(self, context, workdir):
-    super(Vex, self).__init__(context, workdir)
+    super(Vend, self).__init__(context, workdir)
 
   @classmethod
   def product_types(cls):
-    return ['vex']
+    return ['vend']
 
   @classmethod
   def prepare(cls, options, round_manager):
-    super(Vex, cls).prepare(options, round_manager)
+    super(Vend, cls).prepare(options, round_manager)
     round_manager.require_data('python')
 
   @classmethod
   def register_options(cls, register):
-    super(Vex, cls).register_options(register)
+    super(Vend, cls).register_options(register)
     register(
       '--wheelhouses',
       advanced=True,
@@ -63,7 +63,7 @@ class Vex(PythonTask):
     register(
       '--use-this-interpreter',
       default=None,
-      help='Force the vex command to use this exact interpreter instead of '
+      help='Force the vend command to use this exact interpreter instead of '
             'searching for interpreters in specified paths'
     )
     register(
@@ -83,7 +83,7 @@ class Vex(PythonTask):
       action='append',
       default=None,
       help='A list of all python packages necessary for different steps in the '
-            'Vex preparation process. This list is specified in pants.ini, and '
+            'Vend preparation process. This list is specified in pants.ini, and '
             'any desired changes to the required version numbers should be made '
             'there.'
     )
@@ -311,27 +311,27 @@ class Vex(PythonTask):
                       'all of its PythonLibrary sources.'
       )
 
-    # Generate the fingerprint for this vex using all relevant targets in the graph
+    # Generate the fingerprint for this vend using all relevant targets in the graph
     with self.invalidated(self.context.targets()) as invalidation_check:
       global_vts = VersionedTargetSet.from_versioned_targets(invalidation_check.all_vts)
 
-    # Setup vex directory structure
-    vex_name = '{}.vex'.format(python_binary.name)
-    vex_archive_dir = os.path.join('dist', python_binary.name + '_' + global_vts.cache_key.hash)
-    vex_workdir = os.path.join(vex_archive_dir, vex_name)
-    if os.path.exists(vex_workdir):
-      shutil.rmtree(vex_workdir)
-    source_dir = os.path.join(vex_workdir, 'sources')
-    requirements_path = os.path.join(vex_workdir, 'requirements.txt')
-    logging_path = os.path.join(vex_workdir, 'piplog.log')
-    dependency_wheels_dir = os.path.join(vex_workdir, 'dep_wheels')
-    bootstrap_wheels_dir = os.path.join(vex_workdir, 'bootstrap_wheels')
-    build_path = os.path.join(vex_workdir, 'build-vex.sh')
-    bootstrap_path = os.path.join(vex_workdir, 'bootstrap.py')
-    bootstrap_data_path = os.path.join(vex_workdir, 'bootstrap_data.json')
-    run_path = os.path.join(vex_workdir, 'run.sh')
+    # Setup vend directory structure
+    vend_name = '{}.vend'.format(python_binary.name)
+    vend_archive_dir = os.path.join('dist', python_binary.name + '_' + global_vts.cache_key.hash)
+    vend_workdir = os.path.join(vend_archive_dir, vend_name)
+    if os.path.exists(vend_workdir):
+      shutil.rmtree(vend_workdir)
+    source_dir = os.path.join(vend_workdir, 'sources')
+    requirements_path = os.path.join(vend_workdir, 'requirements.txt')
+    logging_path = os.path.join(vend_workdir, 'piplog.log')
+    dependency_wheels_dir = os.path.join(vend_workdir, 'dep_wheels')
+    bootstrap_wheels_dir = os.path.join(vend_workdir, 'bootstrap_wheels')
+    build_path = os.path.join(vend_workdir, 'build-vend.sh')
+    bootstrap_path = os.path.join(vend_workdir, 'bootstrap.py')
+    bootstrap_data_path = os.path.join(vend_workdir, 'bootstrap_data.json')
+    run_path = os.path.join(vend_workdir, 'run.sh')
 
-    # Copy source files into the vex's source directory
+    # Copy source files into the vend's source directory
     for target in all_source_libs:
       for source_path in target.sources_relative_to_buildroot():
         sourceroot_relative_source_path = os.path.relpath(source_path, target.target_base)
@@ -350,15 +350,15 @@ class Vex(PythonTask):
               pass
           current_dir = os.path.dirname(current_dir)
 
-    # Establish vex's requirements.txt and fill it with dependency_reqs
+    # Establish vend's requirements.txt and fill it with dependency_reqs
     with open(requirements_path, 'wb') as f:
       for req in sorted_py_reqs:
         f.write('{}\n'.format(str(req)))
 
-    # Ensure vex's dependency_wheels_dir
+    # Ensure vend's dependency_wheels_dir
     if not os.path.exists(dependency_wheels_dir):
       os.makedirs(dependency_wheels_dir)
-    # Gather vex's target platforms
+    # Gather vend's target platforms
     desired_platforms = set(python_binary.platforms)
     if desired_platforms == set():
       # If none are specified, assume the current platform
@@ -456,7 +456,7 @@ class Vex(PythonTask):
           )
         )
 
-    # Ensure vex's bootstrap_wheels_dir and download bootstrap wheels
+    # Ensure vend's bootstrap_wheels_dir and download bootstrap wheels
     if not os.path.exists(bootstrap_wheels_dir):
       os.makedirs(bootstrap_wheels_dir)
     download_args = ['--quiet', '--download', bootstrap_wheels_dir]
@@ -466,18 +466,18 @@ class Vex(PythonTask):
       wheel_downloader.main(download_args)
       download_args = download_args[:-1]
 
-    # Codegen the bootstrap script's installer: build-vex.sh
+    # Codegen the bootstrap script's installer: build-vend.sh
     build_script = dedent(
       """
       #!/bin/bash
       set -xeo pipefail
       DIR=$(cd "$( dirname "${BASH_SOURCE[0]}")" && pwd)
-      if [ ! -d $DIR/vexboot ]; then
+      if [ ! -d $DIR/vendboot ]; then
         unzip $DIR/bootstrap_wheels/virtualenv-13.0.3-py2.py3-none-any.whl -d $DIR/virtualenv_source
-        python $DIR/virtualenv_source/virtualenv.py --extra-search-dir=$DIR/bootstrap_wheels/ $DIR/vexboot
-        $DIR/vexboot/bin/pip install pex
+        python $DIR/virtualenv_source/virtualenv.py --extra-search-dir=$DIR/bootstrap_wheels/ $DIR/vendboot
+        $DIR/vendboot/bin/pip install pex
       fi
-      $DIR/vexboot/bin/python $DIR/bootstrap.py
+      $DIR/vendboot/bin/python $DIR/bootstrap.py
       """
     ).strip()
     with open(build_path, 'wb') as f:
@@ -494,13 +494,13 @@ class Vex(PythonTask):
     with open(bootstrap_data_path, 'w') as f:
      json.dump(bootstrap_data, f)
 
-    # Add the bootstrap script to the vex
+    # Add the bootstrap script to the vend
     shutil.copyfile(
-      'contrib/vex/src/python/pants/contrib/vex/bootstrap.py',
+      'contrib/vend/src/python/pants/contrib/vend/bootstrap.py',
       bootstrap_path,
     )
 
-    # Codegen the entrypoint for the vex
+    # Codegen the entrypoint for the vend
     run_script = dedent(
       """
       #!/bin/bash
@@ -512,13 +512,13 @@ class Vex(PythonTask):
       f.write(run_script)
     os.chmod(run_path, 0755)
 
-    # Create the vex source tgz
-    vex_tgz = os.path.join('dist', vex_name) + '.tar.gz'
+    # Create the vend source tgz
+    vend_tgz = os.path.join('dist', vend_name) + '.tar.gz'
     subprocess.check_call([
       'tar',
-      '-zcf', vex_tgz,
-      '-C', vex_archive_dir,
-      vex_name,
+      '-zcf', vend_tgz,
+      '-C', vend_archive_dir,
+      vend_name,
     ])
 
-    print('\nVEX source package created at {}'.format(vex_tgz), file=sys.stderr)
+    print('\nVEND source package created at {}'.format(vend_tgz), file=sys.stderr)

@@ -10,19 +10,19 @@ import os
 import pytest
 from pants_test.pants_run_integration_test import PantsRunIntegrationTest
 
-from pants.contrib.vex.tasks.vex import Vex
+from pants.contrib.vend.tasks.vend import Vend
 
 
-class VexIntegrationTest(PantsRunIntegrationTest):
-  """Integration test for vex which builds Vex distributables of python_binary source projects."""
+class VendIntegrationTest(PantsRunIntegrationTest):
+  """Integration test for vend which builds Vends of python_binary source projects."""
 
   def test_with_thrift(self):
     args = [
-      'vex',
-      'contrib/vex/examples/src/python/test1/test1',
+      'vend',
+      'contrib/vend/examples/src/python/test1/test1',
     ]
     pants_run = self.run_pants(args)
-    os.system('tar zxvf dist//test1.vex.tar.gz -C dist')
+    os.system('tar zxvf dist//test1.vend.tar.gz -C dist')
     self.assert_success(pants_run)
-    thrift_genned_py_lib = os.path.isfile('dist/test1.vex/sources/org/pantsbuild/example/distance/ttypes.py')
+    thrift_genned_py_lib = os.path.isfile('dist/test1.vend/sources/org/pantsbuild/example/distance/ttypes.py')
     self.assertTrue(thrift_genned_py_lib)

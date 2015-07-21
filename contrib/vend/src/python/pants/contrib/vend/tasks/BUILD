@@ -4,14 +4,14 @@
 target(
   name = 'tasks',
   dependencies = [
-    ':vex',
+    ':vend',
   ],
 )
 
 python_library(
-  name = 'vex',
+  name = 'vend',
   sources = [
-    'vex.py',
+    'vend.py',
   ],
   dependencies = [
   	'src/python/pants/backend/python/tasks:python',

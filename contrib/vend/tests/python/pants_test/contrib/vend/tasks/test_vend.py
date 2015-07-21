@@ -18,39 +18,48 @@ from pants.base.build_environment import get_buildroot
 from pants.base.source_root import SourceRoot
 from pants_test.backend.python.tasks.python_task_test import PythonTaskTest
 
-from pants.contrib.vex.tasks.vex import Vex
+from pants.contrib.vend.tasks.vend import Vend
 
 
-class VexTest(PythonTaskTest):
+class VendTest(PythonTaskTest):
 
   @classmethod
   def task_type(cls):
-    return Vex
+    return Vend
 
-  def make_vex(self, target_roots):
-    vex_task = self.create_task(self.context(target_roots=target_roots))
-    self.populate_all_py_versions(vex_task)
-    self.populate_wheelhouses(vex_task)
-    self.populate_interpreter_searchpaths(vex_task)
-    vex_task.execute()
+  def make_vend(self, target_roots):
+    vend_task = self.create_task(self.context(target_roots=target_roots))
+    self.populate_all_py_versions(vend_task)
+    self.populate_wheelhouses(vend_task)
+    self.populate_interpreter_searchpaths(vend_task)
+    self.populate_bootstrap_requirements(vend_task)
+    vend_task.execute()
 
-  def populate_all_py_versions(self, vextest_run_task):
-    vextest_run_task.get_options().all_py_versions = [
+  def populate_all_py_versions(self, vendtest_run_task):
+    vendtest_run_task.get_options().all_py_versions = [
       '2.0', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6',
       '2.7', '3.0', '3.1', '3.2', '3.3', '3.4', '3.5',
     ]
 
-  def populate_wheelhouses(self, vextest_run_task):
-    vextest_run_task.get_options().wheelhouses = [
-      '/Users/mjennings/pants/contrib/vex/tests/python/pants_test/contrib/vex/test_wheelhouse/',
+  def populate_wheelhouses(self, vendtest_run_task):
+    vendtest_run_task.get_options().wheelhouses = [
+      '/Users/mjennings/pants/contrib/vend/tests/python/pants_test/contrib/vend/test_wheelhouse/',
     ]
 
-  def populate_interpreter_searchpaths(self, vextest_run_task):
-    vextest_run_task.get_options().interpreter_search_paths = [
+  def populate_interpreter_searchpaths(self, vendtest_run_task):
+    vendtest_run_task.get_options().interpreter_search_paths = [
     '/usr/local/Cellar/python3/3.4.3/bin/python3.4',
     '/usr/local/Cellar/python/2.7.9/bin/python2.7',
     '/usr/bin/python2.6',
     '/usr/bin/python2.7',
+  ]
+
+  def populate_bootstrap_requirements(self, vendtest_run_task):
+    vendtest_run_task.get_options().bootstrap_requirements = [
+    'setuptools==15.2',
+    'pip==6.1.1',
+    'virtualenv==13.0.3',
+    'pex==1.0.0'
   ]
 
   def create_python_binary(self, relpath, name, dependencies=(), compatibility=None, platforms=()):
@@ -124,7 +133,7 @@ class VexTest(PythonTaskTest):
     return self.target(SyntheticAddress(relpath, name).spec)
 
   def setUp(self):
-    super(VexTest, self).setUp()
+    super(VendTest, self).setUp()
 
     SourceRoot.register('python')
 
@@ -388,22 +397,22 @@ class VexTest(PythonTaskTest):
 
 
   def test_smoke(self):
-    self.make_vex([self.b_binary])
-    # Unzip the vex tar.gz
-    os.system('tar zxvf dist//b.vex.tar.gz -C dist')
-    vex_src_dir = os.path.join('dist','b.vex')
+    self.make_vend([self.b_binary])
+    # Unzip the vend tar.gz
+    os.system('tar zxvf dist//b.vend.tar.gz -C dist')
+    vend_src_dir = os.path.join('dist','b.vend')
     # Assert that all components are present
-    vex_dir_exists = os.path.exists(vex_src_dir)
-    sources_dir_exists = os.path.exists(os.path.join(vex_src_dir, 'sources'))
-    requirements_file_exists = os.path.isfile(os.path.join(vex_src_dir, 'requirements.txt'))
-    log_info_exists = os.path.isfile(os.path.join(vex_src_dir, 'piplog.log'))
-    dep_wheels_dir_exists = os.path.exists(os.path.join(vex_src_dir, 'dep_wheels'))
-    bootstrap_wheels_dir_exists = os.path.exists(os.path.join(vex_src_dir, 'bootstrap_wheels'))
-    build_script_exists = os.path.isfile(os.path.join(vex_src_dir, 'build-vex.sh'))
-    bootstrap_script_exists = os.path.isfile(os.path.join(vex_src_dir, 'bootstrap.py'))
-    bootstrap_data_exists = os.path.isfile(os.path.join(vex_src_dir, 'bootstrap_data.json'))
-    run_script_exists = os.path.isfile(os.path.join(vex_src_dir, 'run.sh'))
-    self.assertTrue(vex_dir_exists)
+    vend_dir_exists = os.path.exists(vend_src_dir)
+    sources_dir_exists = os.path.exists(os.path.join(vend_src_dir, 'sources'))
+    requirements_file_exists = os.path.isfile(os.path.join(vend_src_dir, 'requirements.txt'))
+    log_info_exists = os.path.isfile(os.path.join(vend_src_dir, 'piplog.log'))
+    dep_wheels_dir_exists = os.path.exists(os.path.join(vend_src_dir, 'dep_wheels'))
+    bootstrap_wheels_dir_exists = os.path.exists(os.path.join(vend_src_dir, 'bootstrap_wheels'))
+    build_script_exists = os.path.isfile(os.path.join(vend_src_dir, 'build-vend.sh'))
+    bootstrap_script_exists = os.path.isfile(os.path.join(vend_src_dir, 'bootstrap.py'))
+    bootstrap_data_exists = os.path.isfile(os.path.join(vend_src_dir, 'bootstrap_data.json'))
+    run_script_exists = os.path.isfile(os.path.join(vend_src_dir, 'run.sh'))
+    self.assertTrue(vend_dir_exists)
     self.assertTrue(sources_dir_exists)
     self.assertTrue(requirements_file_exists)
     self.assertTrue(log_info_exists)
@@ -414,22 +423,22 @@ class VexTest(PythonTaskTest):
     self.assertTrue(bootstrap_data_exists)
     self.assertTrue(run_script_exists)
     # Verify all bootstrap wheels are present
-    pex_wheel_exists = os.path.isfile(os.path.join(vex_src_dir, 'bootstrap_wheels', 'pex-1.0.0-py2.py3-none-any.whl'))
-    setuptools_wheel_exists = os.path.isfile(os.path.join(vex_src_dir, 'bootstrap_wheels', 'setuptools-15.2-py2.py3-none-any.whl'))
-    pip_wheel_exists = os.path.isfile(os.path.join(vex_src_dir, 'bootstrap_wheels', 'pip-6.1.1-py2.py3-none-any.whl'))
-    virtualenv_wheel_exists = os.path.isfile(os.path.join(vex_src_dir, 'bootstrap_wheels', 'virtualenv-13.0.3-py2.py3-none-any.whl'))
+    pex_wheel_exists = os.path.isfile(os.path.join(vend_src_dir, 'bootstrap_wheels', 'pex-1.0.0-py2.py3-none-any.whl'))
+    setuptools_wheel_exists = os.path.isfile(os.path.join(vend_src_dir, 'bootstrap_wheels', 'setuptools-15.2-py2.py3-none-any.whl'))
+    pip_wheel_exists = os.path.isfile(os.path.join(vend_src_dir, 'bootstrap_wheels', 'pip-6.1.1-py2.py3-none-any.whl'))
+    virtualenv_wheel_exists = os.path.isfile(os.path.join(vend_src_dir, 'bootstrap_wheels', 'virtualenv-13.0.3-py2.py3-none-any.whl'))
     self.assertTrue(pex_wheel_exists)
     self.assertTrue(setuptools_wheel_exists)
     self.assertTrue(pip_wheel_exists)
     self.assertTrue(virtualenv_wheel_exists)
-    # Build the vex
-    os.system('sh {}'.format(os.path.join(vex_src_dir, 'build-vex.sh')))
+    # Build the vend
+    os.system('sh {}'.format(os.path.join(vend_src_dir, 'build-vend.sh')))
     # Run the binary
-    os.system('sh {}'.format(os.path.join(vex_src_dir, 'run.sh')))
+    os.system('sh {}'.format(os.path.join(vend_src_dir, 'run.sh')))
 
   def test_bad_input_one_py_library(self):
     try:
-      self.make_vex([self.a_library])
+      self.make_vend([self.a_library])
     except Exception, e:
       self.assertEquals(
         e.message,
@@ -440,7 +449,7 @@ class VexTest(PythonTaskTest):
 
   def test_bad_input_two_py_binaries(self):
     try:
-      self.make_vex([self.b_binary, self.c_binary])
+      self.make_vend([self.b_binary, self.c_binary])
     except Exception, e:
       self.assertEquals(
         e.message,
@@ -451,7 +460,7 @@ class VexTest(PythonTaskTest):
 
   def test_bad_input_one_binary_one_library(self):
     try:
-      self.make_vex([self.b_binary, self.a_library])
+      self.make_vend([self.b_binary, self.a_library])
     except Exception, e:
       self.assertEquals(
         e.message,
@@ -461,10 +470,10 @@ class VexTest(PythonTaskTest):
     raise AssertionError('Expected to raise an Exception, but did not.')
 
   def test_interpreter_intersection_simple(self):
-    self.make_vex([self.b_binary])
-    # Unzip the vex tar.gz
-    os.system('tar zxvf dist//b.vex.tar.gz -C dist')
-    bootstrap_data_path = os.path.join('dist','b.vex', 'bootstrap_data.json')
+    self.make_vend([self.b_binary])
+    # Unzip the vend tar.gz
+    os.system('tar zxvf dist//b.vend.tar.gz -C dist')
+    bootstrap_data_path = os.path.join('dist','b.vend', 'bootstrap_data.json')
     #Retrieve bootstrap data from the JSON file
     with open(bootstrap_data_path, 'r') as f:
       bootstrap_data = json.load(f)
@@ -477,10 +486,10 @@ class VexTest(PythonTaskTest):
     )
 
   def test_interpreter_intersection_simple2(self):
-    self.make_vex([self.d_binary])
-    # Unzip the vex tar.gz
-    os.system('tar zxvf dist//d.vex.tar.gz -C dist')
-    bootstrap_data_path = os.path.join('dist','d.vex', 'bootstrap_data.json')
+    self.make_vend([self.d_binary])
+    # Unzip the vend tar.gz
+    os.system('tar zxvf dist//d.vend.tar.gz -C dist')
+    bootstrap_data_path = os.path.join('dist','d.vend', 'bootstrap_data.json')
     #Retrieve bootstrap data from the JSON file
     with open(bootstrap_data_path, 'r') as f:
       bootstrap_data = json.load(f)
@@ -491,7 +500,7 @@ class VexTest(PythonTaskTest):
 
   def test_interpreter_intersection_does_not_exist(self):
     try:
-      self.make_vex([self.f_binary])
+      self.make_vend([self.f_binary])
     except Exception, e:
       self.assertEquals(
         e.message,
@@ -504,7 +513,7 @@ class VexTest(PythonTaskTest):
 
   def test_interpreter_intersection_implementation_contradiction(self):
     try:
-      self.make_vex([self.h_binary])
+      self.make_vend([self.h_binary])
     except Exception, e:
       self.assertEquals(
         e.message,
@@ -516,10 +525,10 @@ class VexTest(PythonTaskTest):
     raise AssertionError('Expected to raise an Exception, but did not.')
 
   def test_interpreter_intersection_complex(self):
-    self.make_vex([self.j_binary])
-    # Unzip the vex tar.gz
-    os.system('tar zxvf dist//j.vex.tar.gz -C dist')
-    bootstrap_data_path = os.path.join('dist','j.vex', 'bootstrap_data.json')
+    self.make_vend([self.j_binary])
+    # Unzip the vend tar.gz
+    os.system('tar zxvf dist//j.vend.tar.gz -C dist')
+    bootstrap_data_path = os.path.join('dist','j.vend', 'bootstrap_data.json')
     #Retrieve bootstrap data from the JSON file
     with open(bootstrap_data_path, 'r') as f:
       bootstrap_data = json.load(f)
@@ -533,10 +542,10 @@ class VexTest(PythonTaskTest):
     )
 
   def test_copy_source_files(self):
-    self.make_vex([self.m_binary])
-    # Unzip the vex tar.gz
-    os.system('tar zxvf dist//m.vex.tar.gz -C dist')
-    source_files_path = os.path.join('dist','m.vex', 'sources', 'src')
+    self.make_vend([self.m_binary])
+    # Unzip the vend tar.gz
+    os.system('tar zxvf dist//m.vend.tar.gz -C dist')
+    source_files_path = os.path.join('dist','m.vend', 'sources', 'src')
     k1_exists = os.path.isfile(os.path.join(source_files_path, 'k', 'k1.py'))
     k2_exists = os.path.isfile(os.path.join(source_files_path, 'k', 'k2.py'))
     k3_exists = os.path.isfile(os.path.join(source_files_path, 'k', 'sub_k', 'k3.py'))
@@ -565,49 +574,45 @@ class VexTest(PythonTaskTest):
     self.assertTrue(src_init_exists)
 
   def test_download_deps_smoke(self):
-    self.make_vex([self.p_binary])
-    # Unzip the vex tar.gz
-    os.system('tar zxvf dist//p.vex.tar.gz -C dist')
-    vex_deps_dir = os.path.join('dist','p.vex', 'dep_wheels')
-    dep_was_downloaded = os.path.isfile(os.path.join(vex_deps_dir, 'wheel1-1.0-py2.py3-none-any.whl'))
+    self.make_vend([self.p_binary])
+    # Unzip the vend tar.gz
+    os.system('tar zxvf dist//p.vend.tar.gz -C dist')
+    vend_deps_dir = os.path.join('dist','p.vend', 'dep_wheels')
+    dep_was_downloaded = os.path.isfile(os.path.join(vend_deps_dir, 'wheel1-1.0-py2.py3-none-any.whl'))
     self.assertTrue(dep_was_downloaded)
 
   def test_download_deps_explicitly_for_current_platform(self):
-    self.make_vex([self.q_binary])
-    # Unzip the vex tar.gz
-    os.system('tar zxvf dist//q.vex.tar.gz -C dist')
-    vex_deps_dir = os.path.join('dist','q.vex', 'dep_wheels')
-    dep_was_downloaded = os.path.isfile(os.path.join(vex_deps_dir, 'wheel1-1.0-py2.py3-none-any.whl'))
+    self.make_vend([self.q_binary])
+    # Unzip the vend tar.gz
+    os.system('tar zxvf dist//q.vend.tar.gz -C dist')
+    vend_deps_dir = os.path.join('dist','q.vend', 'dep_wheels')
+    dep_was_downloaded = os.path.isfile(os.path.join(vend_deps_dir, 'wheel1-1.0-py2.py3-none-any.whl'))
     self.assertTrue(dep_was_downloaded)
 
   def test_download_deps_multiple_platforms(self):
-    self.make_vex([self.t_binary])
-    # Unzip the vex tar.gz
-    os.system('tar zxvf dist//t.vex.tar.gz -C dist')
-    vex_deps_dir = os.path.join('dist','t.vex', 'dep_wheels')
-    mac_wheel_was_downloaded = os.path.isfile(os.path.join(vex_deps_dir, 'wheel2-1.0-cp27-none-macosx_10_10_x86_64.whl'))
-    linux_wheel_was_downloaded = os.path.isfile(os.path.join(vex_deps_dir, 'wheel2-1.0-cp27-none-linux_x86_64.whl'))
+    self.make_vend([self.t_binary])
+    # Unzip the vend tar.gz
+    os.system('tar zxvf dist//t.vend.tar.gz -C dist')
+    vend_deps_dir = os.path.join('dist','t.vend', 'dep_wheels')
+    mac_wheel_was_downloaded = os.path.isfile(os.path.join(vend_deps_dir, 'wheel2-1.0-cp27-none-macosx_10_10_x86_64.whl'))
+    linux_wheel_was_downloaded = os.path.isfile(os.path.join(vend_deps_dir, 'wheel2-1.0-cp27-none-linux_x86_64.whl'))
     self.assertTrue(mac_wheel_was_downloaded)
     self.assertTrue(linux_wheel_was_downloaded)
 
   def test_download_deps_failure_unsupported_platform(self):
     try:
-      self.make_vex([self.u_binary])
+      self.maxDiff = None
+      self.make_vend([self.u_binary])
     except Exception, e:
       self.assertEquals(
-        e.message,
+        e.message[:494],
         '\nCould not resolve all 3rd party dependencies. Each of the combinations '
         'of dependency, platform, and interpreter-version listed below could not be '
         'downloaded. To support these dependencies, you must either restrict your '
         'desired Python versions by adjusting the compatibility field of the '
         'PythonBinary, or drop support for the platforms that cannot be resolved:'
-        '\n\nFailed to download dependency "wheel2==1.0" for Python 2.7 on platform '
-        'unsupported_platform.\nPip error message was:\n"Could not find a version '
-        'that satisfies the requirement wheel2==1.0 (from -r '
-        'dist/u_7ce303039a6907fa05cec9022276fe2798972390/u.vex/requirements.txt '
-        '(line 1)) (from versions: ) No matching distribution found for wheel2==1.0 '
-        '(from -r dist/u_7ce303039a6907fa05cec9022276fe2798972390/u.vex/requirements'
-        '.txt (line 1))"'
+        '\nFailed to resolve dependency "wheel2==1.0" for Python 2.7 on platform '
+        'unsupported_platform.\nSee detailed error messages logged by pip'
       )
       return
     raise AssertionError('Expected to raise an Exception, but did not.')
@@ -615,7 +620,7 @@ class VexTest(PythonTaskTest):
   def test_download_deps_failure_correct_platform_unsupported_interpreter_(self):
     try:
       self.maxDiff = None
-      self.make_vex([self.v_binary])
+      self.make_vend([self.v_binary])
     except Exception, e:
       self.assertEquals(
         e.message,
@@ -628,14 +633,14 @@ class VexTest(PythonTaskTest):
     raise AssertionError('Expected to raise an Exception, but did not.')
 
   def test_download_deps_multiple_platforms_multiple_interpreters(self):
-    self.make_vex([self.x_binary])
-    # Unzip the vex tar.gz
-    os.system('tar zxvf dist//x.vex.tar.gz -C dist')
-    vex_deps_dir = os.path.join('dist','x.vex', 'dep_wheels')
-    mac_py2_wheel_was_downloaded = os.path.isfile(os.path.join(vex_deps_dir, 'wheel3-1.0-py2-none-macosx_10_10_universal.whl'))
-    mac_py3_wheel_was_downloaded = os.path.isfile(os.path.join(vex_deps_dir, 'wheel3-1.0-py3-none-macosx_10_10_universal.whl'))
-    linux_py2_wheel_was_downloaded = os.path.isfile(os.path.join(vex_deps_dir, 'wheel3-1.0-py2-none-linux_x86_64.whl'))
-    linux_py3_wheel_was_downloaded = os.path.isfile(os.path.join(vex_deps_dir, 'wheel3-1.0-py3-none-linux_x86_64.whl'))
+    self.make_vend([self.x_binary])
+    # Unzip the vend tar.gz
+    os.system('tar zxvf dist//x.vend.tar.gz -C dist')
+    vend_deps_dir = os.path.join('dist','x.vend', 'dep_wheels')
+    mac_py2_wheel_was_downloaded = os.path.isfile(os.path.join(vend_deps_dir, 'wheel3-1.0-py2-none-macosx_10_10_universal.whl'))
+    mac_py3_wheel_was_downloaded = os.path.isfile(os.path.join(vend_deps_dir, 'wheel3-1.0-py3-none-macosx_10_10_universal.whl'))
+    linux_py2_wheel_was_downloaded = os.path.isfile(os.path.join(vend_deps_dir, 'wheel3-1.0-py2-none-linux_x86_64.whl'))
+    linux_py3_wheel_was_downloaded = os.path.isfile(os.path.join(vend_deps_dir, 'wheel3-1.0-py3-none-linux_x86_64.whl'))
     self.assertTrue(mac_py2_wheel_was_downloaded)
     self.assertTrue(mac_py3_wheel_was_downloaded)
     self.assertTrue(linux_py2_wheel_was_downloaded)

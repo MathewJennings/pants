@@ -5,12 +5,12 @@ python_library(
   name='plugin',
   sources=['register.py'],
   dependencies=[
-    'contrib/vex/src/python/pants/contrib/vex/tasks',
+    'contrib/vend/src/python/pants/contrib/vend/tasks',
     'src/python/pants/goal:task_registrar',
   ],
   provides=contrib_setup_py(
-    name='pantsbuild.pants.contrib.vex',
-    description='Vex tgz generator pants plugins.',
+    name='pantsbuild.pants.contrib.vend',
+    description='Vend tgz generator pants plugin.',
     additional_classifiers=[]
   )
 )

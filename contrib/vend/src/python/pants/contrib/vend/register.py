@@ -5,9 +5,10 @@
 from __future__ import (absolute_import, division, generators, nested_scopes, print_function,
                         unicode_literals, with_statement)
 
-from pants.contrib.vex.tasks.vex import Vex
 from pants.goal.task_registrar import TaskRegistrar as task
+
+from pants.contrib.vend.tasks.vend import Vend
 
 
 def register_goals():
-  task(name='vex', action=Vex).install()
+  task(name='vend', action=Vend).install()
