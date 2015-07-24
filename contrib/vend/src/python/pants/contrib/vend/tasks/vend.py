@@ -5,6 +5,7 @@
 from __future__ import (absolute_import, division, generators, nested_scopes, print_function,
                         unicode_literals, with_statement)
 
+import contextlib
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from textwrap import dedent
 
 from pants.backend.core.targets.resources import Resources
@@ -86,6 +88,15 @@ class Vend(PythonTask):
             'Vend preparation process. This list is specified in pants.ini, and '
             'any desired changes to the required version numbers should be made '
             'there.'
+    )
+    register(
+      '--set-vend-cache',
+      default=None,
+      help='Specify the location at which to cache the virtualenv that this Vend '
+            'executes out of on target computers. The environment variable '
+            'VENDCACHE takes precedence over this option. If neither that or this '
+            'option are specified, then the default directory to cache Vends is '
+            'chosen, which is "Path/to/homedirectory/.vendcache".'
     )
 
   def determine_supported_interpreters_intersection(self, all_source_libs):
@@ -326,9 +337,9 @@ class Vend(PythonTask):
     logging_path = os.path.join(vend_workdir, 'piplog.log')
     dependency_wheels_dir = os.path.join(vend_workdir, 'dep_wheels')
     bootstrap_wheels_dir = os.path.join(vend_workdir, 'bootstrap_wheels')
-    build_path = os.path.join(vend_workdir, 'build-vend.sh')
-    bootstrap_path = os.path.join(vend_workdir, 'bootstrap.py')
     bootstrap_data_path = os.path.join(vend_workdir, 'bootstrap_data.json')
+    main_path = os.path.join(vend_workdir, '__main__.py')
+    bootstrap_path = os.path.join(vend_workdir, 'bootstrap.py')
     run_path = os.path.join(vend_workdir, 'run.sh')
 
     # Copy source files into the vend's source directory
@@ -434,6 +445,9 @@ class Vend(PythonTask):
       )
       raise Exception(error_string)
 
+    # Delete piplog.log: we don't need it anymore
+    os.remove(logging_path)
+
     # Check that all downloaded wheels are compatible with the supported python implementations
     for whl_file in os.listdir(dependency_wheels_dir):
       wheel = Wheel(whl_file)
@@ -466,33 +480,31 @@ class Vend(PythonTask):
       wheel_downloader.main(download_args)
       download_args = download_args[:-1]
 
-    # Codegen the bootstrap script's installer: build-vend.sh
-    build_script = dedent(
-      """
-      #!/bin/bash
-      set -xeo pipefail
-      DIR=$(cd "$( dirname "${BASH_SOURCE[0]}")" && pwd)
-      if [ ! -d $DIR/vendboot ]; then
-        unzip $DIR/bootstrap_wheels/virtualenv-13.0.3-py2.py3-none-any.whl -d $DIR/virtualenv_source
-        python $DIR/virtualenv_source/virtualenv.py --extra-search-dir=$DIR/bootstrap_wheels/ $DIR/vendboot
-        $DIR/vendboot/bin/pip install pex
-      fi
-      $DIR/vendboot/bin/python $DIR/bootstrap.py
-      """
-    ).strip()
-    with open(build_path, 'wb') as f:
-      f.write(build_script)
-    os.chmod(build_path, 0755)
+    # Determine where to cache this Vend on the target computer
+    if 'VENDCACHE' in os.environ:
+      vend_cache_dir = os.environ['VENDCACHE']
+    elif self.get_options().set_vend_cache:
+      vend_cache_dir = self.get_options().set_vend_cache
+    else: # Use the default directory
+      vend_cache_dir = '~/.vendcache'
 
     # Write the bootstrap data JSON for the bootstrap.py script to read
     bootstrap_data = {
       'use_this_interpreter_option' : self.get_options().use_this_interpreter,
       'interpreter_search_paths' : self.get_options().interpreter_search_paths,
       'supported_interp_versions' : supported_interp_versions,
-      'supported_interp_impls' : supported_interp_impls
+      'supported_interp_impls' : supported_interp_impls,
+      'vend_cache_dir' : vend_cache_dir,
+      'vend_name' : vend_name,
     }
     with open(bootstrap_data_path, 'w') as f:
      json.dump(bootstrap_data, f)
+
+    # Add the main script (for executing the zip) to the vend
+    shutil.copyfile(
+      'contrib/vend/src/python/pants/contrib/vend/__main__.py',
+      main_path,
+    )
 
     # Add the bootstrap script to the vend
     shutil.copyfile(
@@ -504,21 +516,27 @@ class Vend(PythonTask):
     run_script = dedent(
       """
       #!/bin/bash
-      set -xeo pipefail
+      set -eo pipefail
       exec $(dirname $BASH_SOURCE)/venv/bin/python -m {} "$@"
       """.format(python_binary.entry_point)
     ).strip()
     with open(run_path, 'wb') as f:
       f.write(run_script)
-    os.chmod(run_path, 0755)
 
-    # Create the vend source tgz
-    vend_tgz = os.path.join('dist', vend_name) + '.tar.gz'
-    subprocess.check_call([
-      'tar',
-      '-zcf', vend_tgz,
-      '-C', vend_archive_dir,
-      vend_name,
-    ])
+    # Create the .vend zip file
+    vend_zip = os.path.join('dist', vend_name)
+    if os.path.isfile(vend_zip):
+      os.remove(vend_zip)
+    with open(vend_zip, 'ab') as zf:
+      zf.write('#!/usr/bin/env python\n'.encode('utf-8'))
+    with contextlib.closing(zipfile.ZipFile(vend_zip, 'a')) as zf:
+      for root, dirs, files in os.walk(vend_workdir):
+        for src_file in files:
+            zf.write(os.path.join(root, src_file), arcname=os.path.relpath(os.path.join(root, src_file), vend_workdir))
+    os.chmod(vend_zip, 0755)
 
-    print('\nVEND source package created at {}'.format(vend_tgz), file=sys.stderr)
+    # Delete the archive dir
+    shutil.rmtree(vend_archive_dir)
+
+    # Tell the user where their Vend is
+    print('\nVEND source package created at {}'.format(vend_zip), file=sys.stderr)

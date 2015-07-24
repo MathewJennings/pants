@@ -8,6 +8,7 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
 import json
 import os
 import shutil
+import subprocess
 
 from pex.interpreter import PythonInterpreter
 
@@ -95,8 +96,25 @@ else:
     )
 
 # Create a virtual environment, and install all requirements into it
-os.system('{0} {1}/virtualenv_source/virtualenv.py --extra-search-dir={1}/bootstrap_wheels/ {1}/venv'.format(chosen_interpreter.binary, vend_dir))
-os.system('{0}/venv/bin/pip install -r {0}/requirements.txt --no-index --find-links={0}/dep_wheels/ --find-links={0}/bootstrap_wheels'.format(vend_dir))
+subprocess.call([
+  chosen_interpreter.binary,
+  os.path.join(vend_dir, 'virtualenv_source', 'virtualenv.py'),
+  '--extra-search-dir',
+  os.path.join(vend_dir, 'bootstrap_wheels'),
+  os.path.join(vend_dir, 'venv')
+])
+subprocess.call([
+  os.path.join(vend_dir, 'venv', 'bin', 'pip'),
+  'install',
+  '-r',
+  os.path.join(vend_dir, 'requirements.txt'),
+  '--no-index',
+  '--find-links',
+  os.path.join(vend_dir, 'dep_wheels'),
+  '--find-links',
+  os.path.join(vend_dir, 'bootstrap_wheels'),
+])
 
-# Copy all source code into the virtual environment's site-packages
-os.system('cp -R {0}/sources/* {0}/venv/lib/{1}/site-packages/'.format(vend_dir, chosen_interpreter.binary.split('/')[-1]))
+# Add sources/ directory to venv's sys.path
+with open(os.path.join(vend_dir, 'venv', 'lib', chosen_interpreter.binary.split('/')[-1], 'site-packages', 'sources.pth'), 'wb') as path_file:
+  path_file.write(os.path.join(os.path.realpath(vend_dir), 'sources'))

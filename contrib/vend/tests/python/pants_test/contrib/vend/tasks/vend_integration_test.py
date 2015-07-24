@@ -6,6 +6,7 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
                         unicode_literals, with_statement)
 
 import os
+import shutil
 
 import pytest
 from pants_test.pants_run_integration_test import PantsRunIntegrationTest
@@ -22,7 +23,8 @@ class VendIntegrationTest(PantsRunIntegrationTest):
       'contrib/vend/examples/src/python/test1/test1',
     ]
     pants_run = self.run_pants(args)
-    os.system('tar zxvf dist//test1.vend.tar.gz -C dist')
+    os.system('unzip dist/test1.vend -d dist/myvend')
     self.assert_success(pants_run)
-    thrift_genned_py_lib = os.path.isfile('dist/test1.vend/sources/org/pantsbuild/example/distance/ttypes.py')
+    thrift_genned_py_lib = os.path.isfile('dist/myvend/sources/org/pantsbuild/example/distance/ttypes.py')
     self.assertTrue(thrift_genned_py_lib)
+    shutil.rmtree('dist/myvend')
