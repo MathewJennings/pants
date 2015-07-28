@@ -14,6 +14,7 @@ import sys
 import zipfile
 from textwrap import dedent
 
+from pants.backend.core.targets.resources import Resources
 from pants.backend.python.targets.python_binary import PythonBinary
 from pants.backend.python.targets.python_library import PythonLibrary
 from pants.backend.python.targets.python_requirement_library import PythonRequirementLibrary
@@ -285,12 +286,14 @@ class Vend(PythonTask):
     if not isinstance(python_binary, PythonBinary):
       raise Exception('Invalid target roots: must pass a single python_binary target.')
 
-    # Identify PythonLibraries and PythonRequirementLibraries
+    # Identify PythonLibraries, PythonRequirementLibraries, and Resources
     py_libs = set(self.context.targets(lambda t: isinstance(t, PythonLibrary)))
     py_req_libs = set(self.context.targets(
       lambda t: isinstance(t, PythonRequirementLibrary))
     )
+   resource_libs = set(self.context.targets(lambda t: isinstance(t, Resources)))
     all_source_libs = py_libs | set([python_binary])
+    all_source_items = all_source_libs | resource_libs
     sorted_py_reqs = sorted([
       str(py_req._requirement)
       for py_req_lib in py_req_libs
@@ -333,7 +336,7 @@ class Vend(PythonTask):
     run_path = os.path.join(vend_workdir, 'run.sh')
 
     # Copy source files into the vend's source directory
-    for target in all_source_libs:
+    for target in all_source_items:
       for source_path in target.sources_relative_to_buildroot():
         sourceroot_relative_source_path = os.path.relpath(source_path, target.target_base)
         # Fix source_path to include the buildroot
