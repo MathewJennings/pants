@@ -5,25 +5,21 @@
 from __future__ import (absolute_import, division, generators, nested_scopes, print_function,
                         unicode_literals, with_statement)
 
-import contextlib
 import json
 import logging
 import os
 import re
 import shutil
-import subprocess
 import sys
 import zipfile
 from textwrap import dedent
 
-from pants.backend.core.targets.resources import Resources
 from pants.backend.python.targets.python_binary import PythonBinary
 from pants.backend.python.targets.python_library import PythonLibrary
 from pants.backend.python.targets.python_requirement_library import PythonRequirementLibrary
 from pants.backend.python.tasks.python_task import PythonTask
 from pants.base.build_environment import get_buildroot
 from pants.base.cache_manager import VersionedTargetSet
-from pex.interpreter import PythonInterpreter
 from pip.commands.install import InstallCommand
 from pip.pep425tags import get_platform
 from pip.status_codes import SUCCESS
@@ -61,12 +57,6 @@ class Vend(PythonTask):
       help='Add a location in which to search for a base python interpreter to '
             'use to run the PythonBinary on the deployment target. Default locations '
             'are added to pants.ini'
-    )
-    register(
-      '--use-this-interpreter',
-      default=None,
-      help='Force the vend command to use this exact interpreter instead of '
-            'searching for interpreters in specified paths'
     )
     register(
       '--all-py-versions',
@@ -379,8 +369,8 @@ class Vend(PythonTask):
       desired_platforms.add(get_platform())
 
     # Let error_combinations be a list of tuples (dependency, interpreter,
-    # platform, pip_message) that each describe a combination for which a wheel
-    # could not be downloaded
+    # platform) that each describe a combination for which a wheel could not be
+    # downloaded.
     error_combinations = []
 
     # Establish logging for capturing critical pip failures
@@ -421,8 +411,7 @@ class Vend(PythonTask):
         download_args = download_args[:-1]
       download_args = download_args[:-2]
 
-    # Check for combination of dependency, platform, and interpreter that could
-    # not be downloaded
+    # Check for combination of dependency, platform, and interpreter that could not be downloaded
     if error_combinations:
       error_string = (
         '\nCould not resolve all 3rd party dependencies. Each of the combinations '
@@ -443,6 +432,7 @@ class Vend(PythonTask):
           os.path.join(get_buildroot(), logging_path)
         )
       )
+      shutil.rmtree(vend_archive_dir)
       raise Exception(error_string)
 
     # Delete piplog.log: we don't need it anymore
@@ -459,6 +449,7 @@ class Vend(PythonTask):
           wheel_is_compatible = True
           break
       if not wheel_is_compatible:
+        shutil.rmtree(vend_archive_dir)
         raise Exception('Attempted to download wheel dependency "{}" but it is '
           'not compatible with the python implementation constraints imposed by '
           'the PythonLibrary targets. It runs on Python versions with these '
@@ -488,14 +479,12 @@ class Vend(PythonTask):
     else: # Use the default directory
       vend_cache_dir = '~/.vendcache'
 
-    # Write the bootstrap data JSON for the bootstrap.py script to read
+    # Write the bootstrap data JSON for the __main__.py and bootstrap.py scripts
     bootstrap_data = {
-      'use_this_interpreter_option' : self.get_options().use_this_interpreter,
+      'vend_cache_dir' : vend_cache_dir,
       'interpreter_search_paths' : self.get_options().interpreter_search_paths,
       'supported_interp_versions' : supported_interp_versions,
       'supported_interp_impls' : supported_interp_impls,
-      'vend_cache_dir' : vend_cache_dir,
-      'vend_name' : vend_name,
     }
     with open(bootstrap_data_path, 'w') as f:
      json.dump(bootstrap_data, f)
@@ -527,12 +516,19 @@ class Vend(PythonTask):
     vend_zip = os.path.join('dist', vend_name)
     if os.path.isfile(vend_zip):
       os.remove(vend_zip)
-    with open(vend_zip, 'ab') as zf:
-      zf.write('#!/usr/bin/env python\n'.encode('utf-8'))
-    with contextlib.closing(zipfile.ZipFile(vend_zip, 'a')) as zf:
-      for root, dirs, files in os.walk(vend_workdir):
-        for src_file in files:
-            zf.write(os.path.join(root, src_file), arcname=os.path.relpath(os.path.join(root, src_file), vend_workdir))
+    # Write the shebang for executing the vend directly
+    with open(vend_zip, 'ab') as vend_zipfile:
+      vend_zipfile.write('#!/usr/bin/env python\n'.encode('utf-8'))
+    # Write the contents of the Vend source directory
+    vend_zipfile = zipfile.ZipFile(vend_zip, 'a')
+    for root, dirs, files in os.walk(vend_workdir):
+      for src_file in files:
+          if src_file == '__main__.py':
+            write_path = os.path.relpath(os.path.join(root, src_file), vend_workdir)
+          else:
+            write_path = os.path.join(os.path.basename(vend_archive_dir), os.path.relpath(os.path.join(root, src_file), vend_workdir))
+          vend_zipfile.write(os.path.join(root, src_file), arcname=write_path)
+    vend_zipfile.close()
     os.chmod(vend_zip, 0755)
 
     # Delete the archive dir

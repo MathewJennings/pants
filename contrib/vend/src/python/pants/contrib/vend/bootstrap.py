@@ -13,23 +13,6 @@ import subprocess
 from pex.interpreter import PythonInterpreter
 
 
-def get_impl_abbreviation(version_string):
-  if version_string[:2].lower() == 'ir':
-    return 'ip' # IronPython
-  elif version_string[:2].lower() == 'py':
-    return 'pp' # PyPy
-  else:
-    return version_string[:2].lower() #'CPython' => 'cp', 'Jython' => 'jy'
-
-def interp_satisfies_reqs(interp, bootstrap_data):
-  if (
-    '{}.{}'.format(interp.version[0], interp.version[1]) in bootstrap_data['supported_interp_versions']
-    and get_impl_abbreviation(interp.version_string) in bootstrap_data['supported_interp_impls']
-  ):
-    return True
-  else:
-    return False
-
 def get_children_paths(search_paths, include_hidden_directories=False):
   all_children_paths = set()
   for parent_path in search_paths:
@@ -47,74 +30,117 @@ def get_children_paths(search_paths, include_hidden_directories=False):
     all_children_paths = all_children_paths.union(curr_children_paths)
   return all_children_paths
 
-def search_for_valid_interp(interpreter_candidates):
-  for interp in interpreter_candidates:
-    if interp_satisfies_reqs(interp, bootstrap_data):
-      return interp
-  return None
+
+def attempt_to_create_venv(chosen_interpreter):
+  if chosen_interpreter == None:
+    return False
+  # Create the virtual environment 'venv'
+  subprocess.check_call([
+    chosen_interpreter.binary,
+    os.path.join(vend_dir, 'virtualenv_source', 'virtualenv.py'),
+    '--extra-search-dir',
+    os.path.join(vend_dir, 'bootstrap_wheels'),
+    os.path.join(vend_dir, 'venv')
+  ])
+
+  # Attempt to install all 3rd party requirements into 'venv'
+  returncode = subprocess.call([
+    os.path.join(vend_dir, 'venv', 'bin', 'python'),
+    '-m',
+    'pip.__main__',
+    'install',
+    '-r',
+    os.path.join(vend_dir, 'requirements.txt'),
+    '--no-index',
+    '--find-links',
+    os.path.join(vend_dir, 'dep_wheels'),
+    '--find-links',
+    os.path.join(vend_dir, 'bootstrap_wheels'),
+  ])
+
+  # Check if chosen_interpreter was able to install the requirements.
+  # For example, it might not have been able to if it is running macosx System
+  # Python (intel) but the 3rd party req wheels were built for macosx Brew
+  # Python (x86_64).
+  if returncode == 0:
+    return True
+  else:
+    # Destroy the virtual environment 'venv'
+    shutil.rmtree(os.path.join(vend_dir, 'venv'))
+    return False
 
 
-vend_dir = os.path.dirname(__file__)
+def interp_satisfies_reqs(interp):
+
+  def get_impl_abbreviation(version_string):
+    if version_string[:2].lower() == 'ir':
+      return 'ip' # IronPython
+    elif version_string[:2].lower() == 'py':
+      return 'pp' # PyPy
+    else:
+      return version_string[:2].lower() #'CPython' => 'cp', 'Jython' => 'jy'
+
+  return (
+    interp.python in bootstrap_data['supported_interp_versions']
+    and get_impl_abbreviation(interp.version_string) in bootstrap_data['supported_interp_impls']
+  )
+
+def only_valid_interpreters(interpreter_candidates):
+  for interpreter in interpreter_candidates:
+    if interp_satisfies_reqs(interpreter):
+      yield interpreter
+
+def search_for_interpreter(search_paths):
+  chosen_interpreter = None
+  interpreter_has_been_verified = False
+  interpreter_candidates = list(only_valid_interpreters(PythonInterpreter.find(search_paths)))
+  while interpreter_has_been_verified == False and not interpreter_candidates == []:
+    chosen_interpreter = interpreter_candidates[0]
+    print('Attempting to use the interpreter {} to bootstrap this Vend...'.format(chosen_interpreter.binary))
+    interpreter_has_been_verified = attempt_to_create_venv(chosen_interpreter)
+    interpreter_candidates.remove(chosen_interpreter)
+  return chosen_interpreter, interpreter_has_been_verified
+
+def validate_search_paths(search_paths):
+  for path in search_paths:
+    if os.path.exists(path):
+      yield path
+
 
 # Retrieve bootstrap data from the JSON file
+vend_dir = os.path.dirname(__file__)
 with open(os.path.join(vend_dir, 'bootstrap_data.json'), 'r') as f:
   bootstrap_data = json.load(f)
 
-# Find a valid interpreter
-if not bootstrap_data['use_this_interpreter_option'] is None:
-  try:
-    interpreter = PythonInterpreter.find([bootstrap_data['use_this_interpreter_option']])[0]
-  except IndexError:
-    raise Exception('The desired interpreter passed in to the ./pants vend command '
-                    'via the option --use-this-interpreter does not exist on this '
-                    'target computer. Searched for an interpreter in {}'.format(
-                      bootstrap_data['use_this_interpreter_option']
-                    )
+# Initialize search paths, candidates, and chosen_interpreter
+search_paths = list(validate_search_paths(bootstrap_data['interpreter_search_paths']))
+interpreter_candidates = list(only_valid_interpreters(PythonInterpreter.find(search_paths)))
+chosen_interpreter, interpreter_has_been_verified = search_for_interpreter(search_paths)
+
+while interpreter_has_been_verified == False and search_paths:
+  # Probe only one level deeper at a time in the tree of currently examined directories
+  search_paths = get_children_paths(search_paths)
+  chosen_interpreter, interpreter_has_been_verified = search_for_interpreter(search_paths)
+
+if interpreter_has_been_verified == False:
+  shutil.rmtree(vend_dir)
+  raise Exception('No valid interpreters exist in given search paths "{}" that '
+    'both satisfy python version/implementation requirements imposed by this '
+    'library of code and that can install all of your 3rd party dependencies. Valid '
+    'version(s) are "{}" and valid implementation(s) are "{}". Note that it is also '
+    'possible that these paths contained at least one valid version/implementation '
+    'of Python that satisfied these constraints, but was unable to install your 3rd '
+    'party dependencies. This happens when there is a platform mismatch between what '
+    'computer built your 3rd party wheels and the platform assumed by any valid '
+    'interpreters in the specified search paths (e.g. you have macosx_X_Y_x86_64 '
+    'wheels, but the only valid interpreter found has platform macosx_X_Y_intel.)'
+    .format(
+      bootstrap_data['interpreter_search_paths'],
+      bootstrap_data['supported_interp_versions'],
+      bootstrap_data['supported_interp_impls'],
     )
-  if not interp_satisfies_reqs(interpreter, bootstrap_data):
-    raise Exception('The desired interpreter passed in to the ./pants vend command '
-                    'via the option --use-this-interpreter does not satisfy python '
-                    'version/implementation requirements imposed by this library of '
-                    'code.')
+  )
 else:
-  search_paths = bootstrap_data['interpreter_search_paths']
-  interpreter_candidates = PythonInterpreter.all(search_paths)
-  chosen_interpreter = search_for_valid_interp(interpreter_candidates)
-  while chosen_interpreter == None and search_paths:
-    search_paths = get_children_paths(search_paths)
-    interpreter_candidates = PythonInterpreter.all(search_paths)
-    chosen_interpreter = search_for_valid_interp(interpreter_candidates)
-
-  if chosen_interpreter is None:
-    raise Exception('No valid interpreters exist in given search paths {} that '
-      'satisfy python version/implementation requirements imposed by this library '
-      'of code. Valid version(s) are {} and valid implementation(s) are {}'.format(
-        bootstrap_data['interpreter_search_paths'],
-        bootstrap_data['supported_interp_versions'],
-        bootstrap_data['supported_interp_impls'],
-      )
-    )
-
-# Create a virtual environment, and install all requirements into it
-subprocess.call([
-  chosen_interpreter.binary,
-  os.path.join(vend_dir, 'virtualenv_source', 'virtualenv.py'),
-  '--extra-search-dir',
-  os.path.join(vend_dir, 'bootstrap_wheels'),
-  os.path.join(vend_dir, 'venv')
-])
-subprocess.call([
-  os.path.join(vend_dir, 'venv', 'bin', 'pip'),
-  'install',
-  '-r',
-  os.path.join(vend_dir, 'requirements.txt'),
-  '--no-index',
-  '--find-links',
-  os.path.join(vend_dir, 'dep_wheels'),
-  '--find-links',
-  os.path.join(vend_dir, 'bootstrap_wheels'),
-])
-
-# Add sources/ directory to venv's sys.path
-with open(os.path.join(vend_dir, 'venv', 'lib', chosen_interpreter.binary.split('/')[-1], 'site-packages', 'sources.pth'), 'wb') as path_file:
-  path_file.write(os.path.join(os.path.realpath(vend_dir), 'sources'))
+  # Add sources/ directory to venv's sys.path
+  with open(os.path.join(vend_dir, 'venv', 'lib', 'python{}'.format(chosen_interpreter.python), 'site-packages', 'sources.pth'), 'wb') as path_file:
+    path_file.write(os.path.join(os.path.realpath(vend_dir), 'sources'))

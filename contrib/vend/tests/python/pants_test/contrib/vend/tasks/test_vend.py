@@ -402,8 +402,14 @@ class VendTest(PythonTaskTest):
   def test_smoke(self):
     self.make_vend([self.b_binary])
     # Unzip the vend
-    subprocess.call(['unzip', 'dist/b.vend', '-d', 'dist/bvend'])
-    vend_src_dir = os.path.join('dist','bvend')
+    unzip_dir = os.path.join('dist', 'bvend')
+    if os.path.exists(unzip_dir):
+      shutil.rmtree(unzip_dir)
+    subprocess.check_call(
+      ['unzip', os.path.join('dist', 'b.vend'), '-d', unzip_dir],
+      stderr=subprocess.STDOUT
+    )
+    vend_src_dir = os.path.join(unzip_dir, 'b_b051442ce90c205c41d869c8401cb2914c274f0a')
     # Assert that all components are present
     vend_dir_exists = os.path.exists(vend_src_dir)
     sources_dir_exists = os.path.exists(os.path.join(vend_src_dir, 'sources'))
@@ -412,7 +418,7 @@ class VendTest(PythonTaskTest):
     bootstrap_wheels_dir_exists = os.path.exists(os.path.join(vend_src_dir, 'bootstrap_wheels'))
     bootstrap_script_exists = os.path.isfile(os.path.join(vend_src_dir, 'bootstrap.py'))
     bootstrap_data_exists = os.path.isfile(os.path.join(vend_src_dir, 'bootstrap_data.json'))
-    entry_script_exists = os.path.isfile(os.path.join(vend_src_dir, '__main__.py'))
+    entry_script_exists = os.path.isfile(os.path.join(vend_src_dir, '..', '__main__.py'))
     self.assertTrue(vend_dir_exists)
     self.assertTrue(sources_dir_exists)
     self.assertTrue(requirements_file_exists)
@@ -432,7 +438,9 @@ class VendTest(PythonTaskTest):
     self.assertTrue(virtualenv_wheel_exists)
     # Build the vend and execute it
     subprocess.call([os.path.join('dist', 'b.vend')], stderr=subprocess.STDOUT)
-    shutil.rmtree('dist/bvend')
+    # Clean up
+    shutil.rmtree(unzip_dir)
+    os.remove(os.path.join('dist', 'b.vend'))
 
   def test_bad_input_one_py_library(self):
     try:
@@ -470,8 +478,15 @@ class VendTest(PythonTaskTest):
   def test_interpreter_intersection_simple(self):
     self.make_vend([self.b_binary])
     # Unzip the vend
-    subprocess.call(['unzip', 'dist/b.vend', '-d', 'dist/bvend'])
-    bootstrap_data_path = os.path.join('dist','bvend', 'bootstrap_data.json')
+    unzip_dir = os.path.join('dist', 'bvend')
+    if os.path.exists(unzip_dir):
+      shutil.rmtree(unzip_dir)
+    subprocess.check_call(
+      ['unzip', os.path.join('dist', 'b.vend'), '-d', unzip_dir],
+      stderr=subprocess.STDOUT
+    )
+    vend_src_dir = os.path.join(unzip_dir, 'b_b051442ce90c205c41d869c8401cb2914c274f0a')
+    bootstrap_data_path = os.path.join(vend_src_dir, 'bootstrap_data.json')
     #Retrieve bootstrap data from the JSON file
     with open(bootstrap_data_path, 'r') as f:
       bootstrap_data = json.load(f)
@@ -482,13 +497,21 @@ class VendTest(PythonTaskTest):
         '2.7', '3.0', '3.1', '3.2', '3.3', '3.4', '3.5',
       ])
     )
-    shutil.rmtree('dist/bvend')
+    shutil.rmtree(unzip_dir)
+    os.remove(os.path.join('dist', 'b.vend'))
 
   def test_interpreter_intersection_simple2(self):
     self.make_vend([self.d_binary])
     # Unzip the vend
-    subprocess.call(['unzip', 'dist/d.vend', '-d', 'dist/dvend'])
-    bootstrap_data_path = os.path.join('dist','dvend', 'bootstrap_data.json')
+    unzip_dir = os.path.join('dist', 'dvend')
+    if os.path.exists(unzip_dir):
+      shutil.rmtree(unzip_dir)
+    subprocess.check_call(
+      ['unzip', os.path.join('dist', 'd.vend'), '-d', unzip_dir],
+      stderr=subprocess.STDOUT
+    )
+    vend_src_dir = os.path.join(unzip_dir, 'd_75f6b441eb357710d00aecdbf7ca7498b2c70191')
+    bootstrap_data_path = os.path.join(vend_src_dir, 'bootstrap_data.json')
     #Retrieve bootstrap data from the JSON file
     with open(bootstrap_data_path, 'r') as f:
       bootstrap_data = json.load(f)
@@ -496,7 +519,9 @@ class VendTest(PythonTaskTest):
       set(bootstrap_data['supported_interp_versions']) ==
       set(['2.7', '3.4', '3.5',])
     )
-    shutil.rmtree('dist/dvend')
+    # Clean up
+    shutil.rmtree(unzip_dir)
+    os.remove(os.path.join('dist', 'd.vend'))
 
   def test_interpreter_intersection_does_not_exist(self):
     try:
@@ -527,8 +552,15 @@ class VendTest(PythonTaskTest):
   def test_interpreter_intersection_complex(self):
     self.make_vend([self.j_binary])
     # Unzip the vend
-    subprocess.call(['unzip', 'dist/j.vend', '-d', 'dist/jvend'])
-    bootstrap_data_path = os.path.join('dist','jvend', 'bootstrap_data.json')
+    unzip_dir = os.path.join('dist', 'jvend')
+    if os.path.exists(unzip_dir):
+      shutil.rmtree(unzip_dir)
+    subprocess.check_call(
+      ['unzip', os.path.join('dist', 'j.vend'), '-d', unzip_dir],
+      stderr=subprocess.STDOUT
+    )
+    vend_src_dir = os.path.join(unzip_dir, 'j_64f5a17e5ce71825c3e91d7108b5371a2ff07047')
+    bootstrap_data_path = os.path.join(vend_src_dir, 'bootstrap_data.json')
     #Retrieve bootstrap data from the JSON file
     with open(bootstrap_data_path, 'r') as f:
       bootstrap_data = json.load(f)
@@ -540,13 +572,22 @@ class VendTest(PythonTaskTest):
       set(bootstrap_data['supported_interp_impls']) ==
       set(['cp',])
     )
-    shutil.rmtree('dist/jvend')
+    # Clean up
+    shutil.rmtree(unzip_dir)
+    os.remove(os.path.join('dist', 'j.vend'))
 
   def test_copy_source_files(self):
     self.make_vend([self.m_binary])
     # Unzip the vend
-    subprocess.call(['unzip', 'dist/m.vend', '-d', 'dist/mvend'])
-    source_files_path = os.path.join('dist','mvend', 'sources', 'src')
+    unzip_dir = os.path.join('dist', 'mvend')
+    if os.path.exists(unzip_dir):
+      shutil.rmtree(unzip_dir)
+    subprocess.check_call(
+      ['unzip', os.path.join('dist', 'm.vend'), '-d', unzip_dir],
+      stderr=subprocess.STDOUT
+    )
+    vend_src_dir = os.path.join(unzip_dir, 'm_4e3977a3b5ad82187f102b2a8c0730754d13e48e')
+    source_files_path = os.path.join(vend_src_dir, 'sources', 'src')
     k1_exists = os.path.isfile(os.path.join(source_files_path, 'k', 'k1.py'))
     k2_exists = os.path.isfile(os.path.join(source_files_path, 'k', 'k2.py'))
     k3_exists = os.path.isfile(os.path.join(source_files_path, 'k', 'sub_k', 'k3.py'))
@@ -573,36 +614,65 @@ class VendTest(PythonTaskTest):
     self.assertTrue(l_init3_exists)
     self.assertTrue(m_init_exists)
     self.assertTrue(src_init_exists)
-    shutil.rmtree('dist/mvend')
+    # Clean up
+    shutil.rmtree(unzip_dir)
+    os.remove(os.path.join('dist', 'm.vend'))
 
   def test_download_deps_smoke(self):
     self.make_vend([self.p_binary])
     # Unzip the vend
-    subprocess.call(['unzip', 'dist/p.vend', '-d', 'dist/pvend'])
-    vend_deps_dir = os.path.join('dist','pvend', 'dep_wheels')
+    unzip_dir = os.path.join('dist', 'pvend')
+    if os.path.exists(unzip_dir):
+      shutil.rmtree(unzip_dir)
+    subprocess.check_call(
+      ['unzip', os.path.join('dist', 'p.vend'), '-d', unzip_dir],
+      stderr=subprocess.STDOUT
+    )
+    vend_src_dir = os.path.join(unzip_dir, 'p_14d21a331a32914c47763adfe7dcfcd76901b848')
+    vend_deps_dir = os.path.join(vend_src_dir, 'dep_wheels')
     dep_was_downloaded = os.path.isfile(os.path.join(vend_deps_dir, 'wheel1-1.0-py2.py3-none-any.whl'))
     self.assertTrue(dep_was_downloaded)
-    shutil.rmtree('dist/pvend')
+    # Clean up
+    shutil.rmtree(unzip_dir)
+    os.remove(os.path.join('dist', 'p.vend'))
 
   def test_download_deps_explicitly_for_current_platform(self):
     self.make_vend([self.q_binary])
     # Unzip the vend
-    subprocess.call(['unzip', 'dist/q.vend', '-d', 'dist/qvend'])
-    vend_deps_dir = os.path.join('dist','qvend', 'dep_wheels')
+    unzip_dir = os.path.join('dist', 'qvend')
+    if os.path.exists(unzip_dir):
+      shutil.rmtree(unzip_dir)
+    subprocess.check_call(
+      ['unzip', os.path.join('dist', 'q.vend'), '-d', unzip_dir],
+      stderr=subprocess.STDOUT
+    )
+    vend_src_dir = os.path.join(unzip_dir, 'q_7de93c9b98aee01931b7e1e2820087c1d17f1b8f')
+    vend_deps_dir = os.path.join(vend_src_dir, 'dep_wheels')
     dep_was_downloaded = os.path.isfile(os.path.join(vend_deps_dir, 'wheel1-1.0-py2.py3-none-any.whl'))
     self.assertTrue(dep_was_downloaded)
-    shutil.rmtree('dist/qvend')
+    # Clean up
+    shutil.rmtree(unzip_dir)
+    os.remove(os.path.join('dist', 'q.vend'))
 
   def test_download_deps_multiple_platforms(self):
     self.make_vend([self.t_binary])
-    # Unzip the vend
-    subprocess.call(['unzip', 'dist/t.vend', '-d', 'dist/tvend'])
-    vend_deps_dir = os.path.join('dist','tvend', 'dep_wheels')
+     # Unzip the vend
+    unzip_dir = os.path.join('dist', 'tvend')
+    if os.path.exists(unzip_dir):
+      shutil.rmtree(unzip_dir)
+    subprocess.check_call(
+      ['unzip', os.path.join('dist', 't.vend'), '-d', unzip_dir],
+      stderr=subprocess.STDOUT
+    )
+    vend_src_dir = os.path.join(unzip_dir, 't_d6fac272c964329ccf304b911a850f4416933860')
+    vend_deps_dir = os.path.join(vend_src_dir, 'dep_wheels')
     mac_wheel_was_downloaded = os.path.isfile(os.path.join(vend_deps_dir, 'wheel2-1.0-cp27-none-macosx_10_10_x86_64.whl'))
     linux_wheel_was_downloaded = os.path.isfile(os.path.join(vend_deps_dir, 'wheel2-1.0-cp27-none-linux_x86_64.whl'))
     self.assertTrue(mac_wheel_was_downloaded)
     self.assertTrue(linux_wheel_was_downloaded)
-    shutil.rmtree('dist/tvend')
+    # Clean up
+    shutil.rmtree(unzip_dir)
+    os.remove(os.path.join('dist', 't.vend'))
 
   def test_download_deps_failure_unsupported_platform(self):
     try:
@@ -637,9 +707,16 @@ class VendTest(PythonTaskTest):
 
   def test_download_deps_multiple_platforms_multiple_interpreters(self):
     self.make_vend([self.x_binary])
-    # Unzip the vend
-    subprocess.call(['unzip', 'dist/x.vend', '-d', 'dist/xvend'])
-    vend_deps_dir = os.path.join('dist','xvend', 'dep_wheels')
+     # Unzip the vend
+    unzip_dir = os.path.join('dist', 'xvend')
+    if os.path.exists(unzip_dir):
+      shutil.rmtree(unzip_dir)
+    subprocess.check_call(
+      ['unzip', os.path.join('dist', 'x.vend'), '-d', unzip_dir],
+      stderr=subprocess.STDOUT
+    )
+    vend_src_dir = os.path.join(unzip_dir, 'x_af07f067cc16fd7aa965396206dd75272f6e050e')
+    vend_deps_dir = os.path.join(vend_src_dir, 'dep_wheels')
     mac_py2_wheel_was_downloaded = os.path.isfile(os.path.join(vend_deps_dir, 'wheel3-1.0-py2-none-macosx_10_10_universal.whl'))
     mac_py3_wheel_was_downloaded = os.path.isfile(os.path.join(vend_deps_dir, 'wheel3-1.0-py3-none-macosx_10_10_universal.whl'))
     linux_py2_wheel_was_downloaded = os.path.isfile(os.path.join(vend_deps_dir, 'wheel3-1.0-py2-none-linux_x86_64.whl'))
@@ -648,4 +725,6 @@ class VendTest(PythonTaskTest):
     self.assertTrue(mac_py3_wheel_was_downloaded)
     self.assertTrue(linux_py2_wheel_was_downloaded)
     self.assertTrue(linux_py3_wheel_was_downloaded)
-    shutil.rmtree('dist/xvend')
+    # Clean up
+    shutil.rmtree(unzip_dir)
+    os.remove(os.path.join('dist', 'x.vend'))
