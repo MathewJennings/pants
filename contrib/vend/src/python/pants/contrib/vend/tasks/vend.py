@@ -85,9 +85,10 @@ class Vend(PythonTask):
       default=None,
       help='Specify the location at which to cache the virtualenv that this Vend '
             'executes out of on target computers. The environment variable '
-            'VENDCACHE takes precedence over this option. If neither that or this '
-            'option are specified, then the default directory to cache Vends is '
-            'chosen, which is "Path/to/homedirectory/.vendcache".'
+            'VENDCACHE (on the target computer) takes precedence over this '
+            'option. If neither that or this option are specified, then the '
+            'default directory to cache Vends is chosen, which is '
+            '"Path/to/homedirectory/.vendcache".'
     )
 
   def determine_supported_interpreters_intersection(self, all_source_libs):
@@ -291,7 +292,7 @@ class Vend(PythonTask):
     py_req_libs = set(self.context.targets(
       lambda t: isinstance(t, PythonRequirementLibrary))
     )
-   resource_libs = set(self.context.targets(lambda t: isinstance(t, Resources)))
+    resource_libs = set(self.context.targets(lambda t: isinstance(t, Resources)))
     all_source_libs = py_libs | set([python_binary])
     all_source_items = all_source_libs | resource_libs
     sorted_py_reqs = sorted([
@@ -474,10 +475,11 @@ class Vend(PythonTask):
       wheel_downloader.main(download_args)
       download_args = download_args[:-1]
 
+    # Determine which version of virtualenv we downloaded for the target computer
+    virtualenv_wheel = [wheel for wheel in os.listdir(bootstrap_wheels_dir) if wheel.startswith('virtualenv')][0]
+
     # Determine where to cache this Vend on the target computer
-    if 'VENDCACHE' in os.environ:
-      vend_cache_dir = os.environ['VENDCACHE']
-    elif self.get_options().set_vend_cache:
+    if self.get_options().set_vend_cache:
       vend_cache_dir = self.get_options().set_vend_cache
     else: # Use the default directory
       vend_cache_dir = '~/.vendcache'
@@ -488,6 +490,8 @@ class Vend(PythonTask):
       'interpreter_search_paths' : self.get_options().interpreter_search_paths,
       'supported_interp_versions' : supported_interp_versions,
       'supported_interp_impls' : supported_interp_impls,
+      'supported_platforms' : list(desired_platforms),
+      'virtualenv_wheel' : virtualenv_wheel,
     }
     with open(bootstrap_data_path, 'w') as f:
      json.dump(bootstrap_data, f)

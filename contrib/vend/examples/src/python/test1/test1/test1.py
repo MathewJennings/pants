@@ -11,8 +11,8 @@ from org.pantsbuild.example.distance.ttypes import Distance
 
 
 if __name__ == '__main__':
-	d = Distance(Unit='ft',Number=5)
-	greetees = sys.argv[1:] or ['world']
-	for greetee in greetees:
-		print('Hello, {}!'.format(greetee))
-	print('Here is a Thrift object: {}'.format(d))
+  d = Distance(Unit='ft',Number=5)
+  greetees = sys.argv[1:] or ['world']
+  for greetee in greetees:
+    print('Hello, {}!'.format(greetee))
+  print('Here is a Thrift object: {}'.format(d))

@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 
 from pex.interpreter import PythonInterpreter
 
@@ -31,42 +32,45 @@ def get_children_paths(search_paths, include_hidden_directories=False):
   return all_children_paths
 
 
-def attempt_to_create_venv(chosen_interpreter):
+def attempt_to_create_venv(chosen_interpreter, supported_platforms):
   if chosen_interpreter == None:
     return False
-  # Create the virtual environment 'venv'
-  subprocess.check_call([
-    chosen_interpreter.binary,
-    os.path.join(vend_dir, 'virtualenv_source', 'virtualenv.py'),
-    '--extra-search-dir',
-    os.path.join(vend_dir, 'bootstrap_wheels'),
-    os.path.join(vend_dir, 'venv')
-  ])
 
-  # Attempt to install all 3rd party requirements into 'venv'
-  returncode = subprocess.call([
-    os.path.join(vend_dir, 'venv', 'bin', 'python'),
-    '-m',
-    'pip.__main__',
-    'install',
-    '-r',
-    os.path.join(vend_dir, 'requirements.txt'),
-    '--no-index',
-    '--find-links',
-    os.path.join(vend_dir, 'dep_wheels'),
-    '--find-links',
-    os.path.join(vend_dir, 'bootstrap_wheels'),
-  ])
+  chosen_interp_plat, _ = subprocess.Popen(
+    [
+      chosen_interpreter.binary,
+      '-c',
+      'import distutils.util; print(distutils.util.get_platform())'
+    ],
+    stdout=subprocess.PIPE
+  ).communicate()
 
-  # Check if chosen_interpreter was able to install the requirements.
-  # For example, it might not have been able to if it is running macosx System
-  # Python (intel) but the 3rd party req wheels were built for macosx Brew
-  # Python (x86_64).
-  if returncode == 0:
+  if chosen_interp_plat.strip().replace('.', '_').replace('-', '_') in supported_platforms:
+    # Create the virtual environment 'venv'
+    subprocess.check_call([
+      chosen_interpreter.binary,
+      os.path.join(vend_dir, 'virtualenv_source', 'virtualenv.py'),
+      '--extra-search-dir',
+      os.path.join(vend_dir, 'bootstrap_wheels'),
+      os.path.join(vend_dir, 'venv')
+    ])
+
+    # Install all 3rd party requirements into 'venv'
+    subprocess.check_call([
+      os.path.join(vend_dir, 'venv', 'bin', 'python'),
+      '-m',
+      'pip.__main__',
+      'install',
+      '-r',
+      os.path.join(vend_dir, 'requirements.txt'),
+      '--no-index',
+      '--find-links',
+      os.path.join(vend_dir, 'dep_wheels'),
+      '--find-links',
+      os.path.join(vend_dir, 'bootstrap_wheels'),
+    ])
     return True
   else:
-    # Destroy the virtual environment 'venv'
-    shutil.rmtree(os.path.join(vend_dir, 'venv'))
     return False
 
 
@@ -90,14 +94,14 @@ def only_valid_interpreters(interpreter_candidates):
     if interp_satisfies_reqs(interpreter):
       yield interpreter
 
-def search_for_interpreter(search_paths):
+def search_for_interpreter(search_paths, supported_platforms):
   chosen_interpreter = None
   interpreter_has_been_verified = False
   interpreter_candidates = list(only_valid_interpreters(PythonInterpreter.find(search_paths)))
   while interpreter_has_been_verified == False and not interpreter_candidates == []:
     chosen_interpreter = interpreter_candidates[0]
     print('Attempting to use the interpreter {} to bootstrap this Vend...'.format(chosen_interpreter.binary))
-    interpreter_has_been_verified = attempt_to_create_venv(chosen_interpreter)
+    interpreter_has_been_verified = attempt_to_create_venv(chosen_interpreter, supported_platforms)
     interpreter_candidates.remove(chosen_interpreter)
   return chosen_interpreter, interpreter_has_been_verified
 
@@ -115,12 +119,12 @@ with open(os.path.join(vend_dir, 'bootstrap_data.json'), 'r') as f:
 # Initialize search paths, candidates, and chosen_interpreter
 search_paths = list(validate_search_paths(bootstrap_data['interpreter_search_paths']))
 interpreter_candidates = list(only_valid_interpreters(PythonInterpreter.find(search_paths)))
-chosen_interpreter, interpreter_has_been_verified = search_for_interpreter(search_paths)
+chosen_interpreter, interpreter_has_been_verified = search_for_interpreter(search_paths, bootstrap_data['supported_platforms'])
 
 while interpreter_has_been_verified == False and search_paths:
   # Probe only one level deeper at a time in the tree of currently examined directories
   search_paths = get_children_paths(search_paths)
-  chosen_interpreter, interpreter_has_been_verified = search_for_interpreter(search_paths)
+  chosen_interpreter, interpreter_has_been_verified = search_for_interpreter(search_paths, bootstrap_data['supported_platforms'])
 
 if interpreter_has_been_verified == False:
   shutil.rmtree(vend_dir)
@@ -143,4 +147,7 @@ if interpreter_has_been_verified == False:
 else:
   # Add sources/ directory to venv's sys.path
   with open(os.path.join(vend_dir, 'venv', 'lib', 'python{}'.format(chosen_interpreter.python), 'site-packages', 'sources.pth'), 'wb') as path_file:
-    path_file.write(os.path.join(os.path.realpath(vend_dir), 'sources'))
+    # Note that the Vend isn't currently in the cache, but in a uuid directory
+    # So remove the uuid from the path that is being written into the .pth file
+    final_vend_directory = os.path.join(os.path.dirname(os.path.dirname(vend_dir)), os.path.basename(vend_dir))
+    path_file.write(os.path.join(os.path.realpath(final_vend_directory), 'sources'))
