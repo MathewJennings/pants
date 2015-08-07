@@ -19,20 +19,20 @@ def get_children_paths(search_paths, include_hidden_directories=False):
   for parent_path in search_paths:
     curr_children_paths = set([
       os.path.join(parent_path, child_item) for child_item in os.listdir(parent_path)
-      if os.path.isdir(os.path.join(parent_path, child_item))
-      and os.access(os.path.join(parent_path, child_item), os.R_OK)
+      if os.path.isdir(os.path.join(parent_path, child_item)) and
+         os.access(os.path.join(parent_path, child_item), os.R_OK)
     ])
     # Prune hidden directories
     if not include_hidden_directories:
       curr_children_paths = set([
-      child_path for child_path in curr_children_paths
-      if not os.path.basename(os.path.normpath(child_path)).startswith('.')
-    ])
+        child_path for child_path in curr_children_paths
+        if not os.path.basename(os.path.normpath(child_path)).startswith('.')
+      ])
     all_children_paths = all_children_paths.union(curr_children_paths)
   return all_children_paths
 
 
-def attempt_to_create_venv(chosen_interpreter, supported_platforms):
+def attempt_to_create_venv(chosen_interpreter, supported_platforms, vend_dir):
   if chosen_interpreter == None:
     return False
 
@@ -74,7 +74,7 @@ def attempt_to_create_venv(chosen_interpreter, supported_platforms):
     return False
 
 
-def interp_satisfies_reqs(interp):
+def interp_satisfies_reqs(interp, bootstrap_data):
 
   def get_impl_abbreviation(version_string):
     if version_string[:2].lower() == 'ir':
@@ -89,19 +89,19 @@ def interp_satisfies_reqs(interp):
     and get_impl_abbreviation(interp.version_string) in bootstrap_data['supported_interp_impls']
   )
 
-def only_valid_interpreters(interpreter_candidates):
+def only_valid_interpreters(interpreter_candidates, bootstrap_data):
   for interpreter in interpreter_candidates:
-    if interp_satisfies_reqs(interpreter):
+    if interp_satisfies_reqs(interpreter, bootstrap_data):
       yield interpreter
 
-def search_for_interpreter(search_paths, supported_platforms):
+def search_for_interpreter(search_paths, bootstrap_data, vend_dir):
   chosen_interpreter = None
   interpreter_has_been_verified = False
-  interpreter_candidates = list(only_valid_interpreters(PythonInterpreter.find(search_paths)))
+  interpreter_candidates = list(only_valid_interpreters(PythonInterpreter.find(search_paths), bootstrap_data))
   while interpreter_has_been_verified == False and not interpreter_candidates == []:
     chosen_interpreter = interpreter_candidates[0]
     print('Attempting to use the interpreter {} to bootstrap this Vend...'.format(chosen_interpreter.binary))
-    interpreter_has_been_verified = attempt_to_create_venv(chosen_interpreter, supported_platforms)
+    interpreter_has_been_verified = attempt_to_create_venv(chosen_interpreter, bootstrap_data['supported_platforms'], vend_dir)
     interpreter_candidates.remove(chosen_interpreter)
   return chosen_interpreter, interpreter_has_been_verified
 
@@ -110,44 +110,47 @@ def validate_search_paths(search_paths):
     if os.path.exists(path):
       yield path
 
+def bootstrap():
+  # Retrieve bootstrap data from the JSON file
+  vend_dir = os.path.dirname(__file__)
+  with open(os.path.join(vend_dir, 'bootstrap_data.json'), 'r') as f:
+    bootstrap_data = json.load(f)
 
-# Retrieve bootstrap data from the JSON file
-vend_dir = os.path.dirname(__file__)
-with open(os.path.join(vend_dir, 'bootstrap_data.json'), 'r') as f:
-  bootstrap_data = json.load(f)
+  # Initialize search paths, candidates, and chosen_interpreter
+  search_paths = list(validate_search_paths(bootstrap_data['interpreter_search_paths']))
+  interpreter_candidates = list(only_valid_interpreters(PythonInterpreter.find(search_paths), bootstrap_data))
+  chosen_interpreter, interpreter_has_been_verified = search_for_interpreter(search_paths, bootstrap_data, vend_dir)
 
-# Initialize search paths, candidates, and chosen_interpreter
-search_paths = list(validate_search_paths(bootstrap_data['interpreter_search_paths']))
-interpreter_candidates = list(only_valid_interpreters(PythonInterpreter.find(search_paths)))
-chosen_interpreter, interpreter_has_been_verified = search_for_interpreter(search_paths, bootstrap_data['supported_platforms'])
+  while interpreter_has_been_verified == False and search_paths:
+    # Probe only one level deeper at a time in the tree of currently examined directories
+    search_paths = get_children_paths(search_paths)
+    chosen_interpreter, interpreter_has_been_verified = search_for_interpreter(search_paths, bootstrap_data, vend_dir)
 
-while interpreter_has_been_verified == False and search_paths:
-  # Probe only one level deeper at a time in the tree of currently examined directories
-  search_paths = get_children_paths(search_paths)
-  chosen_interpreter, interpreter_has_been_verified = search_for_interpreter(search_paths, bootstrap_data['supported_platforms'])
-
-if interpreter_has_been_verified == False:
-  shutil.rmtree(vend_dir)
-  raise Exception('No valid interpreters exist in given search paths "{}" that '
-    'both satisfy python version/implementation requirements imposed by this '
-    'library of code and that can install all of your 3rd party dependencies. Valid '
-    'version(s) are "{}" and valid implementation(s) are "{}". Note that it is also '
-    'possible that these paths contained at least one valid version/implementation '
-    'of Python that satisfied these constraints, but was unable to install your 3rd '
-    'party dependencies. This happens when there is a platform mismatch between what '
-    'computer built your 3rd party wheels and the platform assumed by any valid '
-    'interpreters in the specified search paths (e.g. you have macosx_X_Y_x86_64 '
-    'wheels, but the only valid interpreter found has platform macosx_X_Y_intel.)'
-    .format(
-      bootstrap_data['interpreter_search_paths'],
-      bootstrap_data['supported_interp_versions'],
-      bootstrap_data['supported_interp_impls'],
+  if interpreter_has_been_verified == False:
+    shutil.rmtree(vend_dir)
+    raise Exception('No valid interpreters exist in given search paths "{}" that '
+      'both satisfy python version/implementation requirements imposed by this '
+      'library of code and that can install all of your 3rd party dependencies. Valid '
+      'version(s) are "{}" and valid implementation(s) are "{}". Note that it is also '
+      'possible that these paths contained at least one valid version/implementation '
+      'of Python that satisfied these constraints, but was unable to install your 3rd '
+      'party dependencies. This happens when there is a platform mismatch between what '
+      'computer built your 3rd party wheels and the platform assumed by any valid '
+      'interpreters in the specified search paths (e.g. you have macosx_X_Y_x86_64 '
+      'wheels, but the only valid interpreter found has platform macosx_X_Y_intel.)'
+      .format(
+        bootstrap_data['interpreter_search_paths'],
+        bootstrap_data['supported_interp_versions'],
+        bootstrap_data['supported_interp_impls'],
+      )
     )
-  )
-else:
-  # Add sources/ directory to venv's sys.path
-  with open(os.path.join(vend_dir, 'venv', 'lib', 'python{}'.format(chosen_interpreter.python), 'site-packages', 'sources.pth'), 'wb') as path_file:
-    # Note that the Vend isn't currently in the cache, but in a uuid directory
-    # So remove the uuid from the path that is being written into the .pth file
-    final_vend_directory = os.path.join(os.path.dirname(os.path.dirname(vend_dir)), os.path.basename(vend_dir))
-    path_file.write(os.path.join(os.path.realpath(final_vend_directory), 'sources'))
+  else:
+    # Add sources/ directory to venv's sys.path
+    with open(os.path.join(vend_dir, 'venv', 'lib', 'python{}'.format(chosen_interpreter.python), 'site-packages', 'sources.pth'), 'wb') as path_file:
+      # Note that the Vend isn't currently in the cache, but in a uuid directory
+      # So remove the uuid from the path that is being written into the .pth file
+      final_vend_directory = os.path.join(os.path.dirname(os.path.dirname(vend_dir)), os.path.basename(vend_dir))
+      path_file.write(os.path.join(os.path.realpath(final_vend_directory), 'sources'))
+
+if __name__ == '__main__':
+  bootstrap()

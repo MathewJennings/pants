@@ -19,6 +19,7 @@ from pants.backend.python.targets.python_requirement_library import PythonRequir
 from pants.base.address import SyntheticAddress
 from pants.base.build_environment import get_buildroot
 from pants.base.source_root import SourceRoot
+from pants.util.dirutil import safe_mkdir
 from pants_test.backend.python.tasks.python_task_test import PythonTaskTest
 
 from pants.contrib.vend.tasks.vend import Vend
@@ -31,39 +32,50 @@ class VendTest(PythonTaskTest):
     return Vend
 
   def make_vend(self, target_roots):
+    options = {
+      'vend': {
+        'all_py_versions' : [
+          '2.6', '2.7', '3.2', '3.3', '3.4',
+        ],
+        'wheelhouses' : [
+          os.path.join(self.build_root, '.wheelhouse')
+        ],
+        'interpreter_search_paths' : [
+          '/usr/local/Cellar/python3/3.4.3/bin/python3.4',
+          '/usr/local/Cellar/python/2.7.9/bin/python2.7',
+          '/usr/bin/python2.6',
+          '/usr/bin/python2.7',
+        ],
+        'bootstrap_requirements' : [
+          'setuptools==15.2',
+          'pip==6.1.1',
+          'virtualenv==13.0.3',
+          'pex==1.0.0'
+        ],
+      }
+    }
+    self.set_options(
+      all_py_versions=[
+        '2.6', '2.7', '3.2', '3.3', '3.4',
+      ],
+      wheelhouses=[
+        os.path.join(self.build_root, '.wheelhouse')
+      ],
+      interpreter_search_paths=[
+        '/usr/local/Cellar/python3/3.4.3/bin/python3.4',
+        '/usr/local/Cellar/python/2.7.9/bin/python2.7',
+        '/usr/bin/python2.6',
+        '/usr/bin/python2.7',
+      ],
+      bootstrap_requirements=[
+        'setuptools==15.2',
+        'pip==6.1.1',
+        'virtualenv==13.0.3',
+        'pex==1.0.0'
+      ],
+    )
     vend_task = self.create_task(self.context(target_roots=target_roots))
-    self.populate_all_py_versions(vend_task)
-    self.populate_wheelhouses(vend_task)
-    self.populate_interpreter_searchpaths(vend_task)
-    self.populate_bootstrap_requirements(vend_task)
     vend_task.execute()
-
-  def populate_all_py_versions(self, vendtest_run_task):
-    vendtest_run_task.get_options().all_py_versions = [
-      '2.0', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6',
-      '2.7', '3.0', '3.1', '3.2', '3.3', '3.4', '3.5',
-    ]
-
-  def populate_wheelhouses(self, vendtest_run_task):
-    vendtest_run_task.get_options().wheelhouses = [
-      '/Users/mjennings/pants/contrib/vend/tests/python/pants_test/contrib/vend/test_wheelhouse/',
-    ]
-
-  def populate_interpreter_searchpaths(self, vendtest_run_task):
-    vendtest_run_task.get_options().interpreter_search_paths = [
-    '/usr/local/Cellar/python3/3.4.3/bin/python3.4',
-    '/usr/local/Cellar/python/2.7.9/bin/python2.7',
-    '/usr/bin/python2.6',
-    '/usr/bin/python2.7',
-  ]
-
-  def populate_bootstrap_requirements(self, vendtest_run_task):
-    vendtest_run_task.get_options().bootstrap_requirements = [
-    'setuptools==15.2',
-    'pip==6.1.1',
-    'virtualenv==13.0.3',
-    'pex==1.0.0'
-  ]
 
   def create_python_binary(self, relpath, name, dependencies=(), compatibility=None, platforms=()):
     # Create source file
@@ -100,8 +112,8 @@ class VendTest(PythonTaskTest):
       """).format(
         name=name,
         compatibility=compatibility,
-        dependencies=','.join(map(repr, dependencies)),
-        platforms=','.join(map(repr, platforms)),
+        dependencies=','.join([repr(d) for d in dependencies]),
+        platforms=','.join([repr(p) for p in platforms]),
       )
     )
     return self.target(SyntheticAddress(relpath, name).spec)
@@ -124,7 +136,7 @@ class VendTest(PythonTaskTest):
       """).format(
         name=name,
         sources_clause='sources=[{0}],'.format(','.join(sources_strs)) if sources_strs else '',
-        dependencies=','.join(map(repr, dependencies)),
+        dependencies=','.join([repr(d) for d in dependencies]),
         compatibility = compatibility,
         provides_clause='provides={0},'.format(provides) if provides else ''
       )
@@ -135,10 +147,42 @@ class VendTest(PythonTaskTest):
         self.create_file(relpath=os.path.join(relpath, source), contents=contents)
     return self.target(SyntheticAddress(relpath, name).spec)
 
+  def build_wheel(self, wheel_name, python_tag, abi_tag, platform_tag):
+    wheel_dir = self.create_dir(relpath=wheel_name)
+    wheel_setup = self.create_file(
+      relpath = os.path.join(wheel_name, 'setup.py'),
+      contents= dedent("""
+        #!/usr/bin/env python
+        from setuptools import setup
+
+        setup(name='{}',
+              version='1.0',
+        )
+      """.format(wheel_name))
+    )
+    p = subprocess.Popen(['python', wheel_setup, 'bdist_wheel', '-d', self.wheelhouse], cwd=wheel_dir)
+    p.communicate()
+    os.rename(
+      os.path.join(self.wheelhouse, '{}-1.0-cp27-none-macosx_10_10_x86_64.whl'.format(wheel_name)),
+      os.path.join(self.wheelhouse, '{}-1.0-{}-{}-{}.whl'.format(wheel_name, python_tag, abi_tag, platform_tag))
+    )
+
+  def build_wheelhouse(self):
+    self.wheelhouse = self.create_dir(relpath='.wheelhouse')
+    self.build_wheel('wheel1', 'py2.py3', 'none', 'any')
+    self.build_wheel('wheel2', 'cp27', 'none', 'linux_x86_64')
+    self.build_wheel('wheel2', 'cp27', 'none', 'macosx_10_10_x86_64')
+    self.build_wheel('wheel3', 'py2', 'none', 'linux_x86_64')
+    self.build_wheel('wheel3', 'py2', 'none', 'macosx_10_10_universal')
+    self.build_wheel('wheel3', 'py3', 'none', 'linux_x86_64')
+    self.build_wheel('wheel3', 'py3', 'none', 'macosx_10_10_universal')
+
   def setUp(self):
     super(VendTest, self).setUp()
 
     SourceRoot.register('python')
+
+    self.build_wheelhouse()
 
     self.a_library = self.create_python_library(
       relpath = 'python/src/a',
@@ -443,37 +487,28 @@ class VendTest(PythonTaskTest):
     os.remove(os.path.join('dist', 'b.vend'))
 
   def test_bad_input_one_py_library(self):
-    try:
+    with self.assertRaises(Exception) as e_context_manager:
       self.make_vend([self.a_library])
-    except Exception, e:
-      self.assertEquals(
-        e.message,
-        'Invalid target roots: must pass a single python_binary target.'
-      )
-      return
-    raise AssertionError('Expected to raise an Exception, but did not.')
+    self.assertEquals(
+      e_context_manager.exception.message,
+      'Invalid target roots: must pass a single python_binary target.'
+    )
 
   def test_bad_input_two_py_binaries(self):
-    try:
+    with self.assertRaises(Exception) as e_context_manager:
       self.make_vend([self.b_binary, self.c_binary])
-    except Exception, e:
-      self.assertEquals(
-        e.message,
-        'Invalid target roots: must pass a single target.'
-      )
-      return
-    raise AssertionError('Expected to raise an Exception, but did not.')
+    self.assertEquals(
+      e_context_manager.exception.message,
+      'Invalid target roots: must pass a single target.'
+    )
 
   def test_bad_input_one_binary_one_library(self):
-    try:
+    with self.assertRaises(Exception) as e_context_manager:
       self.make_vend([self.b_binary, self.a_library])
-    except Exception, e:
-      self.assertEquals(
-        e.message,
-        'Invalid target roots: must pass a single target.'
-      )
-      return
-    raise AssertionError('Expected to raise an Exception, but did not.')
+    self.assertEquals(
+      e_context_manager.exception.message,
+      'Invalid target roots: must pass a single target.'
+    )
 
   def test_interpreter_intersection_simple(self):
     self.make_vend([self.b_binary])
@@ -493,8 +528,7 @@ class VendTest(PythonTaskTest):
     self.assertTrue(
       set(bootstrap_data['supported_interp_versions']) ==
       set([
-        '2.0', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6',
-        '2.7', '3.0', '3.1', '3.2', '3.3', '3.4', '3.5',
+        '2.6', '2.7', '3.2', '3.3', '3.4',
       ])
     )
     shutil.rmtree(unzip_dir)
@@ -517,37 +551,31 @@ class VendTest(PythonTaskTest):
       bootstrap_data = json.load(f)
     self.assertTrue(
       set(bootstrap_data['supported_interp_versions']) ==
-      set(['2.7', '3.4', '3.5',])
+      set(['2.7', '3.4',])
     )
     # Clean up
     shutil.rmtree(unzip_dir)
     os.remove(os.path.join('dist', 'd.vend'))
 
   def test_interpreter_intersection_does_not_exist(self):
-    try:
+    with self.assertRaises(Exception) as e_context_manager:
       self.make_vend([self.f_binary])
-    except Exception, e:
-      self.assertEquals(
-        e.message,
-        'No Python interpreter can satisfy the intersection of the constraints '
-        'imposed by the PythonLibrary targets. Check the "compatibility" field '
-        'of the PythonBinary and all of its PythonLibrary sources.'
-      )
-      return
-    raise AssertionError('Expected to raise an Exception, but did not.')
+    self.assertEquals(
+      e_context_manager.exception.message,
+      'No Python interpreter can satisfy the intersection of the constraints '
+      'imposed by the PythonLibrary targets. Check the "compatibility" field '
+      'of the PythonBinary and all of its PythonLibrary sources.'
+    )
 
   def test_interpreter_intersection_implementation_contradiction(self):
-    try:
+    with self.assertRaises(Exception) as e_context_manager:
       self.make_vend([self.h_binary])
-    except Exception, e:
-      self.assertEquals(
-        e.message,
-        'No Python interpreter can satisfy the intersection of the constraints '
-        'imposed by the PythonLibrary targets. Check the "compatibility" field '
-        'of the PythonBinary and all of its PythonLibrary sources.'
-      )
-      return
-    raise AssertionError('Expected to raise an Exception, but did not.')
+    self.assertEquals(
+      e_context_manager.exception.message,
+      'No Python interpreter can satisfy the intersection of the constraints '
+      'imposed by the PythonLibrary targets. Check the "compatibility" field '
+      'of the PythonBinary and all of its PythonLibrary sources.'
+    )
 
   def test_interpreter_intersection_complex(self):
     self.make_vend([self.j_binary])
@@ -566,7 +594,7 @@ class VendTest(PythonTaskTest):
       bootstrap_data = json.load(f)
     self.assertTrue(
       set(bootstrap_data['supported_interp_versions']) ==
-      set(['3.4', '3.5',])
+      set(['3.4'])
     )
     self.assertTrue(
       set(bootstrap_data['supported_interp_impls']) ==
@@ -619,6 +647,7 @@ class VendTest(PythonTaskTest):
     os.remove(os.path.join('dist', 'm.vend'))
 
   def test_download_deps_smoke(self):
+    self.build_wheelhouse()
     self.make_vend([self.p_binary])
     # Unzip the vend
     unzip_dir = os.path.join('dist', 'pvend')
@@ -635,8 +664,10 @@ class VendTest(PythonTaskTest):
     # Clean up
     shutil.rmtree(unzip_dir)
     os.remove(os.path.join('dist', 'p.vend'))
+    shutil.rmtree(self.wheelhouse)
 
   def test_download_deps_explicitly_for_current_platform(self):
+    self.build_wheelhouse()
     self.make_vend([self.q_binary])
     # Unzip the vend
     unzip_dir = os.path.join('dist', 'qvend')
@@ -653,8 +684,10 @@ class VendTest(PythonTaskTest):
     # Clean up
     shutil.rmtree(unzip_dir)
     os.remove(os.path.join('dist', 'q.vend'))
+    shutil.rmtree(self.wheelhouse)
 
   def test_download_deps_multiple_platforms(self):
+    self.build_wheelhouse()
     self.make_vend([self.t_binary])
      # Unzip the vend
     unzip_dir = os.path.join('dist', 'tvend')
@@ -673,39 +706,35 @@ class VendTest(PythonTaskTest):
     # Clean up
     shutil.rmtree(unzip_dir)
     os.remove(os.path.join('dist', 't.vend'))
+    shutil.rmtree(self.wheelhouse)
 
   def test_download_deps_failure_unsupported_platform(self):
-    try:
+    with self.assertRaises(Exception) as e_context_manager:
       self.make_vend([self.u_binary])
-    except Exception, e:
-      self.assertEquals(
-        e.message[:494],
-        '\nCould not resolve all 3rd party dependencies. Each of the combinations '
-        'of dependency, platform, and interpreter-version listed below could not be '
-        'downloaded. To support these dependencies, you must either restrict your '
-        'desired Python versions by adjusting the compatibility field of the '
-        'PythonBinary, or drop support for the platforms that cannot be resolved:'
-        '\nFailed to resolve dependency "wheel2==1.0" for Python 2.7 on platform '
-        'unsupported_platform.\nSee detailed error messages logged by pip'
-      )
-      return
-    raise AssertionError('Expected to raise an Exception, but did not.')
+    self.assertEquals(
+      e_context_manager.exception.message[:494],
+      '\nCould not resolve all 3rd party dependencies. Each of the combinations '
+      'of dependency, platform, and interpreter-version listed below could not be '
+      'downloaded. To support these dependencies, you must either restrict your '
+      'desired Python versions by adjusting the compatibility field of the '
+      'PythonBinary, or drop support for the platforms that cannot be resolved:'
+      '\nFailed to resolve dependency "wheel2==1.0" for Python 2.7 on platform '
+      'unsupported_platform.\nSee detailed error messages logged by pip'
+    )
 
   def test_download_deps_failure_correct_platform_unsupported_interpreter_(self):
-    try:
+    with self.assertRaises(Exception) as e_context_manager:
       self.make_vend([self.v_binary])
-    except Exception, e:
-      self.assertEquals(
-        e.message,
-        'Attempted to download wheel dependency "wheel2" but it is not compatible '
-        'with the python implementation constraints imposed by the PythonLibrary '
-        'targets. It runs on Python versions with these PEP425 Python Tags: [u\'cp27\'], '
-        'but the valid interpreter implementations are [u\'pp\']'
-      )
-      return
-    raise AssertionError('Expected to raise an Exception, but did not.')
+    self.assertEquals(
+      e_context_manager.exception.message[:494],
+      'Attempted to download wheel dependency "wheel2" but it is not compatible '
+      'with the python implementation constraints imposed by the PythonLibrary '
+      'targets. It runs on Python versions with these PEP425 Python Tags: [u\'cp27\'], '
+      'but the valid interpreter implementations are [u\'pp\']'
+    )
 
   def test_download_deps_multiple_platforms_multiple_interpreters(self):
+    self.build_wheelhouse()
     self.make_vend([self.x_binary])
      # Unzip the vend
     unzip_dir = os.path.join('dist', 'xvend')
@@ -728,3 +757,4 @@ class VendTest(PythonTaskTest):
     # Clean up
     shutil.rmtree(unzip_dir)
     os.remove(os.path.join('dist', 'x.vend'))
+    shutil.rmtree(self.wheelhouse)

@@ -21,6 +21,7 @@ from pants.backend.python.targets.python_requirement_library import PythonRequir
 from pants.backend.python.tasks.python_task import PythonTask
 from pants.base.build_environment import get_buildroot
 from pants.base.cache_manager import VersionedTargetSet
+from pants.util.dirutil import safe_mkdir
 from pip.commands.install import InstallCommand
 from pip.pep425tags import get_platform
 from pip.status_codes import SUCCESS
@@ -28,9 +29,6 @@ from pip.wheel import Wheel
 
 
 class Vend(PythonTask):
-  def __init__(self, context, workdir):
-    super(Vend, self).__init__(context, workdir)
-
   @classmethod
   def product_types(cls):
     return ['vend']
@@ -128,85 +126,49 @@ class Vend(PythonTask):
         major, minor = version_string.split('.')[:2]
       return (int(major), int(minor))
 
+    def parse_single_constraint(constraint, operation):
+      constraint_version_index = constraint.find(operation) + len(operation)
+      constraint_version = constraint[constraint_version_index:]
+      constraint_implementation = constraint[:constraint_version_index - len(operation)]
+      return constraint_version, constraint_implementation
+
     def handle_single_constraint(constraint, supported_vers, supported_impls):
       if '<=' in constraint:
-        constraint_version_index = constraint.find('<=') + 2
-        constraint_version = constraint[constraint_version_index:]
-        constraint_implementation = constraint[:constraint_version_index - 2]
+        constraint_version, constraint_implementation = parse_single_constraint(constraint, '<=')
         supported_vers = [
-          v for v in supported_vers if (
-            (lambda x:
-              parse_python_version(x) <= parse_python_version(constraint_version)
-            )(v)
-          )
+          v for v in supported_vers if parse_python_version(v) <= parse_python_version(constraint_version)
         ]
       elif '<' in constraint:
-        constraint_version_index = constraint.find('<') + 1
-        constraint_version = constraint[constraint_version_index:]
-        constraint_implementation = constraint[:constraint_version_index - 1]
+        constraint_version, constraint_implementation = parse_single_constraint(constraint, '<')
         supported_vers = [
-          v for v in supported_vers if (
-            (lambda x:
-              parse_python_version(x) < parse_python_version(constraint_version)
-            )(v)
-          )
+          v for v in supported_vers if parse_python_version(v) < parse_python_version(constraint_version)
         ]
       elif '==' in constraint:
-        constraint_version_index = constraint.find('==') + 2
-        constraint_version = constraint[constraint_version_index:]
-        constraint_implementation = constraint[:constraint_version_index - 2]
+        constraint_version, constraint_implementation = parse_single_constraint(constraint, '==')
         supported_vers = [
-          v for v in supported_vers if (
-            (lambda x:
-              parse_python_version(x) == parse_python_version(constraint_version)
-            )(v)
-          )
+          v for v in supported_vers if parse_python_version(v) == parse_python_version(constraint_version)
         ]
       elif '!=' in constraint:
-        constraint_version_index = constraint.find('!=') + 2
-        constraint_version = constraint[constraint_version_index:]
-        constraint_implementation = constraint[:constraint_version_index - 2]
+        constraint_version, constraint_implementation = parse_single_constraint(constraint, '!=')
         supported_vers = [
-          v for v in supported_vers if (
-            (lambda x:
-              parse_python_version(x) != parse_python_version(constraint_version)
-            )(v)
-          )
+          v for v in supported_vers if parse_python_version(v) != parse_python_version(constraint_version)
         ]
       elif '>=' in constraint:
-        constraint_version_index = constraint.find('>=') + 2
-        constraint_version = constraint[constraint_version_index:]
-        constraint_implementation = constraint[:constraint_version_index - 2]
+        constraint_version, constraint_implementation = parse_single_constraint(constraint, '>=')
         supported_vers = [
-          v for v in supported_vers if (
-            (lambda x:
-              parse_python_version(x) >= parse_python_version(constraint_version)
-            )(v)
-          )
+          v for v in supported_vers if parse_python_version(v) >= parse_python_version(constraint_version)
         ]
       elif '>' in constraint:
-        constraint_version_index = constraint.find('>') + 1
-        constraint_version = constraint[constraint_version_index:]
-        constraint_implementation = constraint[:constraint_version_index - 1]
+        constraint_version, constraint_implementation = parse_single_constraint(constraint, '>')
         supported_vers = [
-          v for v in supported_vers if (
-            (lambda x:
-              parse_python_version(x) > parse_python_version(constraint_version)
-            )(v)
-          )
+          v for v in supported_vers if parse_python_version(v) > parse_python_version(constraint_version)
         ]
       elif '~=' in constraint:
         # As enforced by PEP440, cannot use this "compatible release"
         # clause with a single segment version number such as ~=2
-        constraint_version_index = constraint.find('~=') + 2
-        constraint_version = constraint[constraint_version_index:]
-        constraint_implementation = constraint[:constraint_version_index - 2]
+        constraint_version, constraint_implementation = parse_single_constraint(constraint, '~=')
         supported_vers = [
-          v for v in supported_vers if (
-            (lambda x:
-              parse_python_version(x) >= parse_python_version(constraint_version[:-2])
-            )(v)
-          )
+          v for v in supported_vers if parse_python_version(v) >= parse_python_version(constraint_version[:-2])
         ]
       else:
         raise Exception('The constraint "{}" does not have a valid form. The '
@@ -227,48 +189,40 @@ class Vend(PythonTask):
       # constraints
       reqs = lib.compatibility
       if reqs:
-        # Enforce that reqs is a list of strings
-        if type(reqs) != list:
+        # Enforce that reqs is a compatible iterable of strings
+        if isinstance(reqs, str):
           reqs = [reqs]
+
         # Initialize values for this library
         valid_interp_versions_for_this_lib = set()
         valid_interp_implementations_for_this_lib = set()
 
+        # Resolve version constraint(s) imposed by this req. Lists of valid
+        # versions across different reqs will be logical ORed together to
+        # form the full list of valid interpreter versions for a single lib.
         for req in reqs:
           # Initialize values for this requirement
           valid_interp_versions_for_this_req = self.get_options().all_py_versions[:]
           valid_interp_implementations_for_this_req = set(['py','cp','ip','pp','jy'])
 
-          # Resolve version constraint(s) imposed by this req. Lists of valid
-          # versions across different reqs will be logical ORed together to
-          # form the full list of valid interpreter versions for a single lib.
-          if ',' in req:
-            # Take the logical AND (set intersection) of all individual version
-            # constraints listed in a single requirement string
-            # e.g. '>=2.7,<3' becomes >=2.7 AND <3
-            constraints = req.split(',')
-            for constraint in constraints:
-              (valid_interp_versions_for_this_req,
-              valid_interp_implementations_for_this_req) = handle_single_constraint(
-                constraint,
-                valid_interp_versions_for_this_req,
-                valid_interp_implementations_for_this_req
-              )
-          else:
-              (valid_interp_versions_for_this_req,
-              valid_interp_implementations_for_this_req) = handle_single_constraint(
-                req,
-                valid_interp_versions_for_this_req,
-                valid_interp_implementations_for_this_req
-              )
 
-          # Add valid interpreter implementations for this req to full list of
-          # valid interpreter implementations for the whole library (updating
-          # the logical OR of reqs for this PythonLibrary)
+          # Take the logical AND (set intersection) of all individual version
+          # constraints listed in a single requirement string
+          # e.g. '>=2.7,<3' becomes >=2.7 AND <3
+          constraints = req.split(',')
+          for constraint in constraints:
+            (valid_interp_versions_for_this_req,
+            valid_interp_implementations_for_this_req) = handle_single_constraint(
+              constraint,
+              valid_interp_versions_for_this_req,
+              valid_interp_implementations_for_this_req
+            )
+
+          # Add valid interpreter versions and implementations for this req to
+          # the full lists of valid versions and implementations for the whole
+          # library (updating the logical OR of reqs for this PythonLibrary)
           for valid_interp_impl in valid_interp_implementations_for_this_req:
             valid_interp_implementations_for_this_lib.add(valid_interp_impl)
-
-          # Do the same for interpreter versions
           for valid_interp_version in valid_interp_versions_for_this_req:
             valid_interp_versions_for_this_lib.add(valid_interp_version)
 
@@ -278,73 +232,14 @@ class Vend(PythonTask):
 
     return (list(final_interp_version_intersection), list(final_interp_impl_intersection))
 
-
-  def execute(self):
-    # Grab and validate the PythonBinary input target
-    if len(self.context.target_roots) != 1:
-      raise Exception('Invalid target roots: must pass a single target.')
-    python_binary = self.context.target_roots[0]
-    if not isinstance(python_binary, PythonBinary):
-      raise Exception('Invalid target roots: must pass a single python_binary target.')
-
-    # Identify PythonLibraries, PythonRequirementLibraries, and Resources
-    py_libs = set(self.context.targets(lambda t: isinstance(t, PythonLibrary)))
-    py_req_libs = set(self.context.targets(
-      lambda t: isinstance(t, PythonRequirementLibrary))
-    )
-    resource_libs = set(self.context.targets(lambda t: isinstance(t, Resources)))
-    all_source_libs = py_libs | set([python_binary])
-    all_source_items = all_source_libs | resource_libs
-    sorted_py_reqs = sorted([
-      str(py_req._requirement)
-      for py_req_lib in py_req_libs
-      for py_req in py_req_lib.payload.requirements
-    ])
-    bootstrap_py_reqs = self.get_options().bootstrap_requirements
-
-    # Find the exact intersection of Python interpreter constraints imposed by the
-    # PythonBinary and PythonLibrary targets. ( [list_supported_minor_versions],
-    # [list_supported_pep425_python_implementation_tags] )
-    intersection_supported_interp = self.determine_supported_interpreters_intersection(all_source_libs)
-    supported_interp_versions, supported_interp_impls = intersection_supported_interp
-
-    # Assert that at least one Python interpreter satisfies the intersection of constraints
-    if supported_interp_versions == [] or supported_interp_impls == []:
-      raise Exception('No Python interpreter can satisfy the intersection of '
-                      'the constraints imposed by the PythonLibrary targets. '
-                      'Check the "compatibility" field of the PythonBinary and '
-                      'all of its PythonLibrary sources.'
-      )
-
-    # Generate the fingerprint for this vend using all relevant targets in the graph
-    with self.invalidated(self.context.targets()) as invalidation_check:
-      global_vts = VersionedTargetSet.from_versioned_targets(invalidation_check.all_vts)
-
-    # Setup vend directory structure
-    vend_name = '{}.vend'.format(python_binary.name)
-    vend_archive_dir = os.path.join('dist', python_binary.name + '_' + global_vts.cache_key.hash)
-    vend_workdir = os.path.join(vend_archive_dir, vend_name)
-    if os.path.exists(vend_workdir):
-      shutil.rmtree(vend_workdir)
-    source_dir = os.path.join(vend_workdir, 'sources')
-    requirements_path = os.path.join(vend_workdir, 'requirements.txt')
-    logging_path = os.path.join(vend_workdir, 'piplog.log')
-    dependency_wheels_dir = os.path.join(vend_workdir, 'dep_wheels')
-    bootstrap_wheels_dir = os.path.join(vend_workdir, 'bootstrap_wheels')
-    bootstrap_data_path = os.path.join(vend_workdir, 'bootstrap_data.json')
-    main_path = os.path.join(vend_workdir, '__main__.py')
-    bootstrap_path = os.path.join(vend_workdir, 'bootstrap.py')
-    run_path = os.path.join(vend_workdir, 'run.sh')
-
-    # Copy source files into the vend's source directory
+  def populate_vend_source_directory(self, all_source_items, source_dir):
     for target in all_source_items:
       for source_path in target.sources_relative_to_buildroot():
         sourceroot_relative_source_path = os.path.relpath(source_path, target.target_base)
         # Fix source_path to include the buildroot
         source_path = os.path.join(get_buildroot(), source_path)
         dest_path = os.path.join(source_dir, sourceroot_relative_source_path)
-        if not os.path.exists(os.path.dirname(dest_path)):
-          os.makedirs(os.path.dirname(dest_path))
+        safe_mkdir(os.path.dirname(dest_path))
         shutil.copyfile(source_path, dest_path)
         # Ensure __init__.py files in the source tree
         current_dir = os.path.dirname(sourceroot_relative_source_path)
@@ -355,14 +250,13 @@ class Vend(PythonTask):
               pass
           current_dir = os.path.dirname(current_dir)
 
-    # Establish vend's requirements.txt and fill it with dependency_reqs
-    with open(requirements_path, 'wb') as f:
-      for req in sorted_py_reqs:
-        f.write('{}\n'.format(str(req)))
-
+  def download_third_party_dependencies(self, vend_archive_dir, dependency_wheels_dir,
+    logging_path, requirements_path, python_binary, supported_interp_versions,
+    supported_interp_impls
+  ):
     # Ensure vend's dependency_wheels_dir
-    if not os.path.exists(dependency_wheels_dir):
-      os.makedirs(dependency_wheels_dir)
+    safe_mkdir(dependency_wheels_dir)
+
     # Gather vend's target platforms
     desired_platforms = set(python_binary.platforms)
     if desired_platforms == set():
@@ -399,7 +293,7 @@ class Vend(PythonTask):
     download_args.append('--platform')
     for platform in desired_platforms:
       download_args.append(platform)
-      download_args.append('--supported-interpreter-version')
+      download_args.append('--interpreter-version')
       for supported_interp_version in supported_interp_versions:
         interp_string = supported_interp_version[0] + supported_interp_version[2]
         download_args.append(interp_string)
@@ -464,10 +358,12 @@ class Vend(PythonTask):
             supported_interp_impls
           )
         )
+    # Return information we need to pass to the bootstrap_data file
+    return desired_platforms
 
-    # Ensure vend's bootstrap_wheels_dir and download bootstrap wheels
-    if not os.path.exists(bootstrap_wheels_dir):
-      os.makedirs(bootstrap_wheels_dir)
+  def download_bootstrap_dependencies(self, bootstrap_wheels_dir, bootstrap_py_reqs):
+    safe_mkdir(bootstrap_wheels_dir)
+
     download_args = ['--quiet', '--download', bootstrap_wheels_dir]
     for bootstrap_req in bootstrap_py_reqs:
       download_args.append(bootstrap_req)
@@ -476,14 +372,21 @@ class Vend(PythonTask):
       download_args = download_args[:-1]
 
     # Determine which version of virtualenv we downloaded for the target computer
-    virtualenv_wheel = [wheel for wheel in os.listdir(bootstrap_wheels_dir) if wheel.startswith('virtualenv')][0]
+    virtualenv_wheel_candidates = [wheel for wheel in os.listdir(bootstrap_wheels_dir) if wheel.startswith('virtualenv')]
+    if virtualenv_wheel_candidates:
+      # Return information we need to pass to the bootstrap_data file
+      return virtualenv_wheel_candidates[0]
+    else:
+      raise Exception('Failed to download a wheel for virtualenv, so cannot '
+        'bootstrap this Vend. Do you have a valid version of virtualenv in '
+        'pants.ini, under the [Vend] section, in the "bootstrap_requirements" '
+        'list?'
+      )
 
-    # Determine where to cache this Vend on the target computer
-    if self.get_options().set_vend_cache:
-      vend_cache_dir = self.get_options().set_vend_cache
-    else: # Use the default directory
-      vend_cache_dir = '~/.vendcache'
-
+  def write_bootstrap_data_to_json(self, bootstrap_data_path, vend_cache_dir,
+    supported_interp_versions, supported_interp_impls, desired_platforms,
+    virtualenv_wheel
+  ):
     # Write the bootstrap data JSON for the __main__.py and bootstrap.py scripts
     bootstrap_data = {
       'vend_cache_dir' : vend_cache_dir,
@@ -496,29 +399,7 @@ class Vend(PythonTask):
     with open(bootstrap_data_path, 'w') as f:
      json.dump(bootstrap_data, f)
 
-    # Add the main script (for executing the zip) to the vend
-    shutil.copyfile(
-      'contrib/vend/src/python/pants/contrib/vend/__main__.py',
-      main_path,
-    )
-
-    # Add the bootstrap script to the vend
-    shutil.copyfile(
-      'contrib/vend/src/python/pants/contrib/vend/bootstrap.py',
-      bootstrap_path,
-    )
-
-    # Codegen the entrypoint for the vend
-    run_script = dedent(
-      """
-      #!/bin/bash
-      set -eo pipefail
-      exec $(dirname $BASH_SOURCE)/venv/bin/python -m {} "$@"
-      """.format(python_binary.entry_point)
-    ).strip()
-    with open(run_path, 'wb') as f:
-      f.write(run_script)
-
+  def write_vend_executable_zip_file(self, vend_name, vend_workdir, vend_archive_dir):
     # Create the .vend zip file
     vend_zip = os.path.join('dist', vend_name)
     if os.path.isfile(vend_zip):
@@ -533,10 +414,124 @@ class Vend(PythonTask):
           if src_file == '__main__.py':
             write_path = os.path.relpath(os.path.join(root, src_file), vend_workdir)
           else:
-            write_path = os.path.join(os.path.basename(vend_archive_dir), os.path.relpath(os.path.join(root, src_file), vend_workdir))
+            write_path = os.path.join(
+              os.path.basename(vend_archive_dir),
+              os.path.relpath(os.path.join(root, src_file), vend_workdir)
+            )
           vend_zipfile.write(os.path.join(root, src_file), arcname=write_path)
     vend_zipfile.close()
     os.chmod(vend_zip, 0755)
+    return vend_zip
+
+  def execute(self):
+    # Grab and validate the PythonBinary input target
+    if len(self.context.target_roots) != 1:
+      raise Exception('Invalid target roots: must pass a single target.')
+    python_binary = self.context.target_roots[0]
+    if not isinstance(python_binary, PythonBinary):
+      raise Exception('Invalid target roots: must pass a single python_binary target.')
+
+    # Identify PythonLibraries, PythonRequirementLibraries, and Resources
+    py_libs = set(self.context.targets(lambda t: isinstance(t, PythonLibrary)))
+    py_req_libs = set(self.context.targets(
+      lambda t: isinstance(t, PythonRequirementLibrary))
+    )
+    resource_libs = set(self.context.targets(lambda t: isinstance(t, Resources)))
+    all_source_libs = py_libs | set([python_binary])
+    all_source_items = all_source_libs | resource_libs
+    sorted_py_reqs = sorted([
+      str(py_req._requirement)
+      for py_req_lib in py_req_libs
+      for py_req in py_req_lib.payload.requirements
+    ])
+    bootstrap_py_reqs = self.get_options().bootstrap_requirements
+
+    # Generate the fingerprint for this vend using all relevant targets in the graph
+    with self.invalidated(self.context.targets()) as invalidation_check:
+      global_vts = VersionedTargetSet.from_versioned_targets(invalidation_check.all_vts)
+
+    # Setup vend directory structure
+    vend_name = '{}.vend'.format(python_binary.name)
+    vend_archive_dir = os.path.join('dist', python_binary.name + '_' + global_vts.cache_key.hash)
+    vend_workdir = os.path.join(vend_archive_dir, vend_name)
+    if os.path.exists(vend_workdir):
+      shutil.rmtree(vend_workdir)
+    source_dir = os.path.join(vend_workdir, 'sources')
+    requirements_path = os.path.join(vend_workdir, 'requirements.txt')
+    logging_path = os.path.join(vend_workdir, 'piplog.log')
+    dependency_wheels_dir = os.path.join(vend_workdir, 'dep_wheels')
+    bootstrap_wheels_dir = os.path.join(vend_workdir, 'bootstrap_wheels')
+    bootstrap_data_path = os.path.join(vend_workdir, 'bootstrap_data.json')
+    main_path = os.path.join(vend_workdir, '__main__.py')
+    bootstrap_path = os.path.join(vend_workdir, 'bootstrap.py')
+    run_path = os.path.join(vend_workdir, 'run.sh')
+
+    # Copy source files into the vend's source directory
+    self.populate_vend_source_directory(all_source_items, source_dir)
+
+    # Find the exact intersection of Python interpreter constraints imposed by the
+    # PythonBinary and PythonLibrary targets. ( [list_supported_minor_versions],
+    # [list_supported_pep425_python_implementation_tags] )
+    intersection_supported_interp = self.determine_supported_interpreters_intersection(all_source_libs)
+    supported_interp_versions, supported_interp_impls = intersection_supported_interp
+
+    # Assert that at least one Python interpreter satisfies the intersection of constraints
+    if not supported_interp_versions or not supported_interp_impls:
+      raise Exception('No Python interpreter can satisfy the intersection of '
+                      'the constraints imposed by the PythonLibrary targets. '
+                      'Check the "compatibility" field of the PythonBinary and '
+                      'all of its PythonLibrary sources.'
+      )
+
+    # Establish vend's requirements.txt and fill it with dependency_reqs
+    with open(requirements_path, 'wb') as f:
+      for req in sorted_py_reqs:
+        f.write('{}\n'.format(str(req)))
+
+    desired_platforms = self.download_third_party_dependencies(vend_archive_dir,
+      dependency_wheels_dir, logging_path, requirements_path, python_binary,
+      supported_interp_versions, supported_interp_impls
+    )
+
+    virtualenv_wheel = self.download_bootstrap_dependencies(bootstrap_wheels_dir,
+      bootstrap_py_reqs
+    )
+
+    # Determine where to cache this Vend on the target computer
+    if self.get_options().set_vend_cache:
+      vend_cache_dir = self.get_options().set_vend_cache
+    else: # Use the default directory
+      vend_cache_dir = '~/.vendcache'
+
+    self.write_bootstrap_data_to_json(bootstrap_data_path, vend_cache_dir,
+      supported_interp_versions, supported_interp_impls, desired_platforms,
+      virtualenv_wheel
+    )
+
+    # Add the main script (for executing the zip) to the vend
+    shutil.copyfile(
+      'contrib/vend/src/python/pants/contrib/vend/__main__.py',
+      main_path,
+    )
+
+    # Add the bootstrap script to the vend
+    shutil.copyfile(
+      'contrib/vend/src/python/pants/contrib/vend/bootstrap.py',
+      bootstrap_path,
+    )
+
+    # Codegen and add the entrypoint for the vend
+    run_script = dedent(
+      """
+      #!/bin/bash
+      set -eo pipefail
+      exec $(dirname $BASH_SOURCE)/venv/bin/python -m {} "$@"
+      """.format(python_binary.entry_point)
+    ).strip()
+    with open(run_path, 'wb') as f:
+      f.write(run_script)
+
+    vend_zip = self.write_vend_executable_zip_file(vend_name, vend_workdir, vend_archive_dir)
 
     # Delete the archive dir
     shutil.rmtree(vend_archive_dir)

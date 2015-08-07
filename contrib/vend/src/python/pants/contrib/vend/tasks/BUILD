@@ -14,8 +14,8 @@ python_library(
     'vend.py',
   ],
   dependencies = [
-  	'src/python/pants/backend/python/tasks:python',
-  	'3rdparty/python:pex',
+    'src/python/pants/backend/python/tasks:python',
+    '3rdparty/python:pex',
     '3rdparty/python:pip',
   ],
 )

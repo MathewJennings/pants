@@ -8,8 +8,11 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
 import os
 import shutil
 import subprocess
+from textwrap import dedent
+from uuid import uuid4
 
-import pytest
+from pants.base.source_root import SourceRoot
+from pants.util.dirutil import safe_mkdir, safe_open
 from pants_test.pants_run_integration_test import PantsRunIntegrationTest
 
 from pants.contrib.vend.tasks.vend import Vend
@@ -19,17 +22,16 @@ class VendIntegrationTest(PantsRunIntegrationTest):
   """Integration test for vend which builds Vends of python_binary source projects."""
 
   def test_with_thrift(self):
-    args = [
+    test_args = [
       'vend',
-      'contrib/vend/examples/src/python/test1/test1',
+      'contrib/vend/examples/src/python/test1/test1'
     ]
-    pants_run = self.run_pants(args)
+    pants_run = self.run_pants(test_args)
     unzip_dir = os.path.join('dist', 'myvend')
     if os.path.exists(unzip_dir):
       shutil.rmtree(unzip_dir)
     subprocess.check_call(
-      ['unzip', os.path.join('dist', 'test1.vend'), '-d', unzip_dir],
-      stderr=subprocess.STDOUT
+      ['unzip', os.path.join('dist', 'test1.vend'), '-d', unzip_dir]
     )
     self.assert_success(pants_run)
     fingerprint_dir_name = os.listdir(os.path.join('dist', 'myvend'))[1]

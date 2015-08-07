@@ -5,6 +5,7 @@
 from __future__ import (absolute_import, division, generators, nested_scopes, print_function,
                         unicode_literals, with_statement)
 
+import errno
 import json
 import os
 import shutil
@@ -12,6 +13,16 @@ import subprocess
 import sys
 import zipfile
 from uuid import uuid4
+
+
+def safe_mkdir(directory):
+  """Ensure a directory is present.
+  If it's not there, create it.  If it is, no-op."""
+  try:
+    os.makedirs(directory)
+  except OSError as e:
+    if e.errno != errno.EEXIST:
+      raise
 
 
 def bootstrap_vend(vend_cache_dir, vend_name_and_fingerprint, vend_zip):
@@ -102,10 +113,7 @@ def execute_vend():
   this_vend_cache_path = os.path.join(vend_cache_dir, vend_name_and_fingerprint)
 
   # Ensure the cache exists
-  try:
-    os.makedirs(vend_cache_dir)
-  except OSError:
-    pass
+  safe_mkdir(vend_cache_dir)
 
   # Check if the Vend is in the cache
   bootstrapped = os.path.exists(this_vend_cache_path)
