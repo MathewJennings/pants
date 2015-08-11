@@ -7,12 +7,16 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 
 from pex.interpreter import PythonInterpreter
+from pip.pep425tags import get_platform
 
+
+_osx_arch_pat = re.compile(r'(.+)_(\d+)_(\d+)_(.+)')
 
 def get_children_paths(search_paths, include_hidden_directories=False):
   all_children_paths = set()
@@ -31,6 +35,37 @@ def get_children_paths(search_paths, include_hidden_directories=False):
     all_children_paths = all_children_paths.union(curr_children_paths)
   return all_children_paths
 
+def get_all_compatible_supported_platforms(supported_platform):
+  '''
+  Platform-specific code cribbed from pip.pep425tags get_supported()
+  '''
+  if sys.platform == 'darwin':
+    # support macosx-10.6-intel on macosx-10.9-x86_64
+    match = _osx_arch_pat.match(supported_platform)
+    if match:
+      name, major, minor, actual_arch = match.groups()
+      actual_arches = [actual_arch]
+      if actual_arch in ('i386', 'ppc'):
+        actual_arches.append('fat')
+      if actual_arch in ('i386', 'x86_64'):
+        actual_arches.append('intel')
+      if actual_arch in ('i386', 'ppc', 'x86_64'):
+        actual_arches.append('fat3')
+      if actual_arch in ('ppc64', 'x86_64'):
+        actual_arches.append('fat64')
+      if actual_arch in ('i386', 'x86_64', 'intel', 'ppc', 'ppc64'):
+        actual_arches.append('universal')
+      tpl = '{0}_{1}_%i_%s'.format(name, major)
+      all_compatible_platforms = []
+      for m in range(int(minor) + 1):
+        for a in actual_arches:
+          all_compatible_platforms.append(tpl % (m, a))
+    else:
+      # platform pattern didn't match (?!)
+      all_compatible_platforms = [supported_platform]
+  else:
+    all_compatible_platforms = [supported_platform]
+  return all_compatible_platforms
 
 def attempt_to_create_venv(chosen_interpreter, supported_platforms, vend_dir):
   if chosen_interpreter == None:
@@ -44,34 +79,34 @@ def attempt_to_create_venv(chosen_interpreter, supported_platforms, vend_dir):
     ],
     stdout=subprocess.PIPE
   ).communicate()
+  chosen_interp_all_compatible_plats = get_all_compatible_supported_platforms(chosen_interp_plat.strip().replace('.', '_').replace('-', '_'))
+  for compatible_plat in chosen_interp_all_compatible_plats:
+    if compatible_plat in supported_platforms:
+      # Create the virtual environment 'venv'
+      subprocess.check_call([
+        chosen_interpreter.binary,
+        os.path.join(vend_dir, 'virtualenv_source', 'virtualenv.py'),
+        '--extra-search-dir',
+        os.path.join(vend_dir, 'bootstrap_wheels'),
+        os.path.join(vend_dir, 'venv')
+      ])
 
-  if chosen_interp_plat.strip().replace('.', '_').replace('-', '_') in supported_platforms:
-    # Create the virtual environment 'venv'
-    subprocess.check_call([
-      chosen_interpreter.binary,
-      os.path.join(vend_dir, 'virtualenv_source', 'virtualenv.py'),
-      '--extra-search-dir',
-      os.path.join(vend_dir, 'bootstrap_wheels'),
-      os.path.join(vend_dir, 'venv')
-    ])
-
-    # Install all 3rd party requirements into 'venv'
-    subprocess.check_call([
-      os.path.join(vend_dir, 'venv', 'bin', 'python'),
-      '-m',
-      'pip.__main__',
-      'install',
-      '-r',
-      os.path.join(vend_dir, 'requirements.txt'),
-      '--no-index',
-      '--find-links',
-      os.path.join(vend_dir, 'dep_wheels'),
-      '--find-links',
-      os.path.join(vend_dir, 'bootstrap_wheels'),
-    ])
-    return True
-  else:
-    return False
+      # Install all 3rd party requirements into 'venv'
+      subprocess.check_call([
+        os.path.join(vend_dir, 'venv', 'bin', 'python'),
+        '-m',
+        'pip.__main__',
+        'install',
+        '-r',
+        os.path.join(vend_dir, 'requirements.txt'),
+        '--no-index',
+        '--find-links',
+        os.path.join(vend_dir, 'dep_wheels'),
+        '--find-links',
+        os.path.join(vend_dir, 'bootstrap_wheels'),
+      ])
+      return True
+  return False
 
 
 def interp_satisfies_reqs(interp, bootstrap_data):

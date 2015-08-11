@@ -7,10 +7,11 @@ python_library(
   dependencies=[
     'contrib/vend/src/python/pants/contrib/vend/tasks',
     'src/python/pants/goal:task_registrar',
+
   ],
   provides=contrib_setup_py(
     name='pantsbuild.pants.contrib.vend',
-    description='Vend tgz generator pants plugin.',
+    description='Vend generator pants plugin.',
     additional_classifiers=[]
   )
 )
