@@ -6,16 +6,9 @@ from __future__ import (absolute_import, division, generators, nested_scopes, pr
                         unicode_literals, with_statement)
 
 import os
-import shutil
-import subprocess
-from textwrap import dedent
-from uuid import uuid4
+import zipfile
 
-from pants.base.source_root import SourceRoot
-from pants.util.dirutil import safe_mkdir, safe_open
 from pants_test.pants_run_integration_test import PantsRunIntegrationTest
-
-from pants.contrib.vend.tasks.vend import Vend
 
 
 class VendIntegrationTest(PantsRunIntegrationTest):
@@ -27,18 +20,13 @@ class VendIntegrationTest(PantsRunIntegrationTest):
       'contrib/vend/examples/src/python/test1/test1'
     ]
     pants_run = self.run_pants(test_args)
-    unzip_dir = os.path.join('dist', 'myvend')
-    if os.path.exists(unzip_dir):
-      shutil.rmtree(unzip_dir)
-    subprocess.check_call(
-      ['unzip', os.path.join('dist', 'test1.vend'), '-d', unzip_dir]
-    )
     self.assert_success(pants_run)
-    fingerprint_dir_name = os.listdir(os.path.join('dist', 'myvend'))[1]
-    thrift_genned_py_lib = os.path.isfile(
-      os.path.join('dist', 'myvend', fingerprint_dir_name, 'sources', 'org',
-        'pantsbuild', 'example', 'distance', 'ttypes.py')
-    )
+    vend_zip = zipfile.ZipFile(os.path.join('dist', 'test1.vend'), 'r')
+    vend_contents = vend_zip.namelist()
+    vend_zip.close()
+    vend_name_and_fingerprint = os.path.dirname(vend_contents[1])
+    thrift_genned_py_lib = os.path.join(
+      vend_name_and_fingerprint, 'sources', 'org',
+      'pantsbuild', 'example', 'distance', 'ttypes.py'
+    ) in vend_contents
     self.assertTrue(thrift_genned_py_lib)
-    shutil.rmtree('dist/myvend')
-    os.remove(os.path.join('dist', 'test1.vend'))
