@@ -21,7 +21,7 @@ from pants.backend.python.targets.python_requirement_library import PythonRequir
 from pants.backend.python.tasks.python_task import PythonTask
 from pants.base.build_environment import get_buildroot
 from pants.base.cache_manager import VersionedTargetSet
-from pants.util.dirutil import safe_mkdir
+from pants.util.dirutil import safe_delete, safe_mkdir
 from pip.commands.install import InstallCommand
 from pip.pep425tags import get_platform
 from pip.status_codes import SUCCESS
@@ -297,9 +297,11 @@ class Vend(PythonTask):
       error_string = (
         '\nCould not resolve all 3rd party dependencies. Each of the combinations '
         'of dependency, platform, and interpreter-version listed below could not be '
-        'downloaded. To support these dependencies, you must either restrict your '
-        'desired Python versions by adjusting the compatibility field of the '
-        'PythonBinary, or drop support for the platforms that cannot be resolved:'
+        'downloaded. Are you pointing to your wheelhouse by adding its path to '
+        '"wheelhouses" under the [vend] section of pants.ini? If so, then to support '
+        'these dependencies, you must either restrict your desired Python versions by '
+        'adjusting the compatibility field of the PythonBinary, or drop support for the '
+        'platforms that cannot be resolved:'
       )
       for error_combination in error_combinations:
         error_string += ('\nFailed to resolve dependency "{}" for Python {} on '
@@ -390,9 +392,8 @@ class Vend(PythonTask):
 
   def _write_vend_executable_zip_file(self, vend_name, vend_workdir, vend_archive_dir):
     # Create the .vend zip file.
-    vend_zip = os.path.join('dist', vend_name)
-    if os.path.isfile(vend_zip):
-      os.remove(vend_zip)
+    vend_zip = os.path.join(get_buildroot(), 'dist', vend_name)
+    safe_delete(vend_zip)
     # Write the shebang for executing the vend directly.
     with open(vend_zip, 'ab') as vend_zipfile:
       vend_zipfile.write('#!/usr/bin/env python\n'.encode('utf-8'))
@@ -441,7 +442,7 @@ class Vend(PythonTask):
 
     # Setup vend directory structure.
     vend_name = '{}.vend'.format(python_binary.name)
-    vend_archive_dir = os.path.join('dist', python_binary.name + '_' + global_vts.cache_key.hash)
+    vend_archive_dir = os.path.join(get_buildroot(), 'dist', python_binary.name + '_' + global_vts.cache_key.hash)
     vend_workdir = os.path.join(vend_archive_dir, vend_name)
     if os.path.exists(vend_workdir):
       shutil.rmtree(vend_workdir)

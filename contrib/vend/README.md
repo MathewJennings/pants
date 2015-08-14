@@ -7,7 +7,7 @@ When distributing python projects, the Pex format is a popular go-to solution. H
 
 ## What Is A Vend?
 
-Vend is a python distribution format which can be thought of as a “Virtual ENvironment Distribution”. A Vend is an executable zip file with a .vend extension (just like a .pex file) that holds data pertinent to running your python project out of a virtual environment. By packaging your python project into a Vend, you can know and enforce the exact combination of platforms and interpreters your project will run on. Calling `./pants vend path/to/python_binary` generates a binary_name.vend file in the dist/ subdirectory within the current directory.
+Vend is a python distribution format which can be thought of as a “Virtual ENvironment Distribution”. A Vend is an executable zip file with a .vend extension (just like a .pex file) that holds data pertinent to running your python project out of a virtual environment. By packaging your python project into a Vend, you can know and enforce the exact combination of platforms and interpreters your project will run on. Calling `./pants vend path/to/python_binary` generates a binary_name.vend file in the dist/ subdirectory within the builddir of the pants task.
 
 Inside this binary_name.vend zip is the source code for your project, as well as all 3rd party dependency wheels required to run it on the combination of platforms and interpreters you wish to support. You specify the platforms you wish to support by typing their names into the `platforms` field of your `python_binary` target, and you can restrict the interpreters you wish to support by typing constraints into its `compatibility` field. It is also possible that the `python_library` targets your `python_binary` depends on have constraints in their compatibility fields, and these are also factored in when determining the intersection of all interpreter constraints.
 
@@ -44,7 +44,7 @@ The vend task is executed by passing it a single PythonBinary target. It perform
 9. Use Pip to download the bootstrap dependency wheels necessary for preparing the Vend; place them in the bootstrap_wheels/ directory.
 10. Write some data necessary for bootstrapping the Vend on target computers into bootstrap_data.json.
 11. Add the scripts \_\_main\_\_.py, bootstrap.py, and run.sh to the vend directory structure. \_\_main\_\_.py is the entrypoint for the executable zip, and it calls the bootstrap.py module and run.sh.
-12. Create an executable zip of the Vend directory structure (with the .vend extension) and place it in a subdirectory named dist/ within the current directory.
+12. Create an executable zip of the Vend directory structure (with the .vend extension) and place it in a subdirectory named dist/ within the builddir of the pants task.
 
 
 ### Inside binary_name.vend’s Source Directory
